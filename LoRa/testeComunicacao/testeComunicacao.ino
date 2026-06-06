@@ -1,7 +1,6 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-#include <SPIFFS.h>
 
 // Sketch de teste: usa duracao curta para validar o fluxo sem esperar 180 s.
 const char* ssid = "Pedro Arthur_2.4GHz";
@@ -10,12 +9,10 @@ const char* password = "Pa29R11T10";
 const char* checkCarUrl = "http://192.168.0.11:5000/check_car?duration=10&sample_interval=1.0";
 const char* statusUrl = "http://192.168.0.11:5000/status";
 const char* resultUrl = "http://192.168.0.11:5000/last_result";
-const char* imageUrl = "http://192.168.0.11:5000/last_image";
 
 const int BOTAO_PIN = 0;
 const unsigned long WIFI_TIMEOUT_MS = 20000;
 const unsigned long HTTP_TIMEOUT_MS = 10000;
-const unsigned long IMAGE_TIMEOUT_MS = 20000;
 const unsigned long POLL_INTERVAL_MS = 3000;
 const unsigned long OBSERVATION_TIMEOUT_MS = 90000;
 const unsigned long DEBOUNCE_MS = 500;
@@ -191,76 +188,6 @@ void imprimirResultadoFinal(const ResultadoRaspberry& resultado) {
   logHeap("apos resultado");
 }
 
-bool baixarUltimaImagemAlerta() {
-  if (!conectarWiFi()) {
-    return false;
-  }
-
-  if (!SPIFFS.begin(true)) {
-    logLinha("[IMG] Falha ao montar SPIFFS.");
-    return false;
-  }
-
-  HTTPClient http;
-  http.setTimeout(IMAGE_TIMEOUT_MS);
-  if (!http.begin(imageUrl)) {
-    logLinha("[IMG] Falha no http.begin.");
-    return false;
-  }
-
-  int httpCode = http.GET();
-  Serial.print("[IMG] GET /last_image -> ");
-  Serial.println(httpCode);
-
-  if (httpCode != HTTP_CODE_OK) {
-    Serial.print("[IMG] Resposta: ");
-    Serial.println(http.getString());
-    http.end();
-    return false;
-  }
-
-  File arquivo = SPIFFS.open("/last_alert.jpg", FILE_WRITE);
-  if (!arquivo) {
-    logLinha("[IMG] Falha ao criar /last_alert.jpg.");
-    http.end();
-    return false;
-  }
-
-  WiFiClient* stream = http.getStreamPtr();
-  uint8_t buffer[512];
-  int tamanhoRestante = http.getSize();
-  size_t bytesBaixados = 0;
-  unsigned long ultimoDado = millis();
-
-  while (http.connected() && (tamanhoRestante > 0 || tamanhoRestante == -1)) {
-    size_t disponivel = stream->available();
-    if (disponivel > 0) {
-      size_t leitura = stream->readBytes(buffer, min(disponivel, sizeof(buffer)));
-      arquivo.write(buffer, leitura);
-      bytesBaixados += leitura;
-      ultimoDado = millis();
-
-      if (tamanhoRestante > 0) {
-        tamanhoRestante -= leitura;
-      }
-    } else {
-      if (millis() - ultimoDado > IMAGE_TIMEOUT_MS) {
-        logLinha("[IMG] Timeout durante download.");
-        break;
-      }
-      delay(10);
-    }
-  }
-
-  arquivo.close();
-  http.end();
-
-  Serial.print("[IMG] Salva em SPIFFS: /last_alert.jpg | bytes=");
-  Serial.println(bytesBaixados);
-  logHeap("apos download da imagem");
-  return bytesBaixados > 0;
-}
-
 bool consultarUltimoResultado(ResultadoRaspberry& resultado) {
   logLinha("[RPI] Consultando /last_result...");
   HttpResponse resposta = httpGET(resultUrl);
@@ -343,7 +270,6 @@ void setup() {
 
   Serial.println("===== Heltec LoRa 32 V2 - TESTE Controle Raspberry =====");
   conectarWiFi();
-  SPIFFS.begin(true);
   logHeap("setup");
   Serial.println("Pressione o botao PRG/BOOT para enviar CHECK_CAR de 10 segundos.");
 }
@@ -359,9 +285,6 @@ void loop() {
       ResultadoRaspberry resultado;
       if (enviarCheckCar(resultado)) {
         imprimirResultadoFinal(resultado);
-        if (resultado.finalDecision == "ALERT_CHILD_ALONE") {
-          baixarUltimaImagemAlerta();
-        }
       } else {
         logLinha("[ERRO] Nao foi possivel concluir o teste.");
       }

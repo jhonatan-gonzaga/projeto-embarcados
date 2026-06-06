@@ -263,9 +263,8 @@ def executar_observacao_background(command, timeout):
 
         summary = ler_resumo()
         result = montar_last_result(summary, stdout)
-        result["returncode"] = process.returncode
-        result["stdout"] = stdout[-4000:] if stdout else ""
-        result["stderr"] = stderr[-4000:] if stderr else ""
+        if process.returncode != 0:
+            logger.warning("Subprocesso terminou com returncode=%s stderr_tail=%s", process.returncode, stderr[-1000:] if stderr else "")
 
         with state_lock:
             last_result = result
@@ -298,9 +297,6 @@ def executar_observacao_background(command, timeout):
                 "telegram_sent": False,
                 "send_to_lora": bool(internet_ok),
                 "timestamp": time.time(),
-                "returncode": -1,
-                "stdout": stdout[-4000:] if stdout else "",
-                "stderr": stderr[-4000:] if stderr else "",
             }
             server_state = "FINISHED"
             current_process = None

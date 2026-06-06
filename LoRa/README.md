@@ -11,7 +11,7 @@ Instale pelo Library Manager da IDE Arduino:
 
 * ArduinoJson
 
-As bibliotecas `WiFi`, `HTTPClient` e `SPIFFS` ja fazem parte do core ESP32.
+As bibliotecas `WiFi` e `HTTPClient` ja fazem parte do core ESP32.
 
 ## Fluxo
 
@@ -20,7 +20,7 @@ As bibliotecas `WiFi`, `HTTPClient` e `SPIFFS` ja fazem parte do core ESP32.
 3. A Raspberry inicia a observacao OAK-D + YOLOv8 OpenVINO.
 4. A Heltec consulta `GET /status` ate receber `FINISHED`.
 5. A Heltec consulta `GET /last_result` e interpreta o JSON com ArduinoJson.
-6. Se `final_decision == "ALERT_CHILD_ALONE"`, a Heltec baixa `GET /last_image` para `/last_alert.jpg` no SPIFFS.
+6. A Heltec toma a acao local com base em `final_decision`, `internet_ok`, `telegram_sent` e `send_to_lora`.
 
 ## Endpoints utilizados
 
@@ -28,8 +28,9 @@ As bibliotecas `WiFi`, `HTTPClient` e `SPIFFS` ja fazem parte do core ESP32.
 GET /check_car
 GET /status
 GET /last_result
-GET /last_image
 ```
+
+`GET /last_image` continua existindo na Raspberry, mas nao e usado pela Heltec. Ele fica reservado para Telegram, navegador e aplicativos futuros.
 
 ## Configuracao
 
@@ -42,7 +43,6 @@ const char* password = "...";
 const char* checkCarUrl = "http://192.168.0.11:5000/check_car";
 const char* statusUrl = "http://192.168.0.11:5000/status";
 const char* resultUrl = "http://192.168.0.11:5000/last_result";
-const char* imageUrl = "http://192.168.0.11:5000/last_image";
 ```
 
 ## Decisoes esperadas
