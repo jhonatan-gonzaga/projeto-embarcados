@@ -10,8 +10,10 @@ curl http://localhost:5000/last_result
 """
 
 import os
+import logging
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -33,6 +35,11 @@ INTERNET_TEST_URL = "https://api.telegram.org"
 INTERNET_TIMEOUT_SECONDS = 3
 
 app = Flask(__name__)
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger("oakd_child_alert")
 
 state_lock = threading.Lock()
 server_state = "IDLE"
@@ -49,7 +56,8 @@ def tem_internet():
         )
         with urllib.request.urlopen(request_obj, timeout=INTERNET_TIMEOUT_SECONDS):
             return True
-    except (urllib.error.URLError, TimeoutError, OSError):
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        logger.info("Internet indisponivel: %s", error)
         return False
 
 
@@ -77,6 +85,15 @@ def ler_resumo():
             data[key.strip()] = converter_valor(value.strip())
 
     return data
+
+
+def ler_tail(file_obj, max_chars=4000):
+    """Le apenas o fim de um arquivo temporario de log."""
+    file_obj.flush()
+    file_obj.seek(0, os.SEEK_END)
+    end_pos = file_obj.tell()
+    file_obj.seek(max(0, end_pos - max_chars))
+    return file_obj.read()
 
 
 def resumo_float(summary, key):
@@ -169,6 +186,7 @@ def enviar_alerta_telegram(summary):
 
     enviar_telegram_mensagem(texto)
     enviar_telegram_imagem(image_path, "Imagem do alerta OAK-D")
+    logger.info("Alerta Telegram enviado com imagem: %s", image_path)
     return True
 
 
@@ -178,7 +196,8 @@ def montar_last_result(summary, stdout=""):
     if final_decision is None and "OAK-D nao encontrada" in stdout:
         final_decision = "OAKD_NOT_FOUND"
     elif final_decision is None:
-        final_decision = "NO_SUMMARY"
+        final_decision = "ERROR"
+        logger.warning("Resumo da observacao nao foi encontrado.")
 
     internet_ok = tem_internet()
     telegram_sent = False
@@ -191,6 +210,9 @@ def montar_last_result(summary, stdout=""):
             # Falhas de Telegram ficam registradas sem interromper o Flask.
             telegram_sent = False
             telegram_error = str(error)
+            logger.exception("Falha ao enviar Telegram")
+    elif final_decision == "ALERT_CHILD_ALONE":
+        logger.info("Alerta confirmado sem internet; Telegram nao sera enviado.")
 
     result = {
         "final_decision": final_decision,
@@ -213,24 +235,31 @@ def executar_observacao_background(command, timeout):
     """Executa a observacao em background e atualiza o estado ao terminar."""
     global current_process, last_result, server_state
     process = None
+    stdout_file = None
+    stderr_file = None
 
     try:
         # Evita que uma falha atual use resumo antigo como se fosse novo.
         if SUMMARY_PATH.exists():
             SUMMARY_PATH.unlink()
 
+        logger.info("Iniciando subprocesso de observacao: %s", " ".join(command))
+        stdout_file = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
+        stderr_file = tempfile.TemporaryFile(mode="w+t", encoding="utf-8")
         process = subprocess.Popen(
             command,
             cwd=APP_DIR,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=stdout_file,
+            stderr=stderr_file,
             text=True,
         )
 
         with state_lock:
             current_process = process
 
-        stdout, stderr = process.communicate(timeout=timeout)
+        process.wait(timeout=timeout)
+        stdout = ler_tail(stdout_file)
+        stderr = ler_tail(stderr_file)
 
         summary = ler_resumo()
         result = montar_last_result(summary, stdout)
@@ -242,10 +271,20 @@ def executar_observacao_background(command, timeout):
             last_result = result
             server_state = "FINISHED"
             current_process = None
+        logger.info(
+            "Observacao finalizada: decision=%s child=%.4f adult=%.4f conf=%.4f telegram=%s",
+            result["final_decision"],
+            result["child_presence_ratio"],
+            result["adult_presence_ratio"],
+            result["child_avg_conf"],
+            result["telegram_sent"],
+        )
     except subprocess.TimeoutExpired:
         if process is not None:
             process.kill()
-            stdout, stderr = process.communicate()
+            process.wait()
+            stdout = ler_tail(stdout_file) if stdout_file is not None else ""
+            stderr = ler_tail(stderr_file) if stderr_file is not None else ""
         else:
             stdout, stderr = "", ""
         internet_ok = tem_internet()
@@ -265,6 +304,7 @@ def executar_observacao_background(command, timeout):
             }
             server_state = "FINISHED"
             current_process = None
+        logger.warning("Observacao encerrada por timeout.")
     except Exception as error:
         internet_ok = tem_internet()
         with state_lock:
@@ -281,11 +321,18 @@ def executar_observacao_background(command, timeout):
             }
             server_state = "FINISHED"
             current_process = None
+        logger.exception("Erro ao executar observacao: %s", error)
+    finally:
+        if stdout_file is not None:
+            stdout_file.close()
+        if stderr_file is not None:
+            stderr_file.close()
 
 
 @app.get("/health")
 def health():
     """Endpoint simples para verificar se o Flask esta ativo."""
+    logger.info("GET /health")
     return jsonify({"status": "ok"})
 
 
@@ -293,6 +340,7 @@ def health():
 def status():
     """Retorna estado atual da observacao."""
     with state_lock:
+        logger.info("GET /status -> %s", server_state)
         return jsonify({"status": server_state})
 
 
@@ -301,7 +349,9 @@ def get_last_result():
     """Retorna o ultimo resultado final salvo em memoria."""
     with state_lock:
         if last_result is None:
+            logger.info("GET /last_result -> NO_RESULT")
             return jsonify({"status": "NO_RESULT"}), 404
+        logger.info("GET /last_result -> %s", last_result.get("final_decision"))
         return jsonify(last_result)
 
 
@@ -309,7 +359,9 @@ def get_last_result():
 def get_last_image():
     """Retorna a imagem salva do ultimo alerta confirmado."""
     if not LAST_ALERT_IMAGE_PATH.exists():
+        logger.info("GET /last_image -> NO_IMAGE")
         return jsonify({"status": "NO_IMAGE"}), 404
+    logger.info("GET /last_image -> %s", LAST_ALERT_IMAGE_PATH)
     return send_file(LAST_ALERT_IMAGE_PATH, mimetype="image/jpeg")
 
 
@@ -322,15 +374,18 @@ def check_car():
         duration = float(request.args.get("duration", DEFAULT_DURATION))
         sample_interval = float(request.args.get("sample_interval", DEFAULT_SAMPLE_INTERVAL))
     except ValueError:
+        logger.warning("GET /check_car com argumentos invalidos: %s", request.query_string.decode())
         return jsonify({"status": "INVALID_ARGUMENTS"}), 400
 
     if duration <= 0 or sample_interval <= 0:
+        logger.warning("GET /check_car com valores fora do intervalo: duration=%s sample_interval=%s", duration, sample_interval)
         return jsonify({"status": "INVALID_ARGUMENTS"}), 400
 
     model = request.args.get("model", str(DEFAULT_MODEL))
 
     with state_lock:
         if server_state == "RUNNING":
+            logger.info("GET /check_car -> BUSY")
             return jsonify({"status": "BUSY"})
         server_state = "RUNNING"
 
@@ -353,6 +408,7 @@ def check_car():
     )
     thread.start()
 
+    logger.info("GET /check_car -> CHECK_STARTED duration=%.1f sample_interval=%.2f", duration, sample_interval)
     return jsonify({"status": "CHECK_STARTED"})
 
 

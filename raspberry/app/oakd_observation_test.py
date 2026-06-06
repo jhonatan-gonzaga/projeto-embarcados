@@ -24,7 +24,8 @@ OBSERVATION_SECONDS = 180
 SAMPLE_INTERVAL = 1.0
 CHILD_MIN_PRESENCE = 0.20
 ADULT_MAX_PRESENCE = 0.05
-MIN_AVG_CONF = 0.60
+MIN_CHILD_CONF = 0.60
+MIN_ADULT_CONF = MIN_CHILD_CONF
 
 ADULT_CLASSES = ["adult", "adultface"]
 CHILD_CLASSES = ["child"]
@@ -51,16 +52,15 @@ def analisar_resultado(result):
         class_name = normalizar_classe(result.names[class_id])
         confidence = float(box.conf[0])
 
-        if confidence < MIN_AVG_CONF:
-            continue
-
         if class_name in CHILD_CLASSES:
-            child_conf_max = max(child_conf_max, confidence)
+            if confidence >= MIN_CHILD_CONF:
+                child_conf_max = max(child_conf_max, confidence)
         elif class_name in ADULT_CLASSES:
-            adult_conf_max = max(adult_conf_max, confidence)
+            if confidence >= MIN_ADULT_CONF:
+                adult_conf_max = max(adult_conf_max, confidence)
 
-    child_detected = child_conf_max >= MIN_AVG_CONF
-    adult_detected = adult_conf_max >= MIN_AVG_CONF
+    child_detected = child_conf_max >= MIN_CHILD_CONF
+    adult_detected = adult_conf_max >= MIN_ADULT_CONF
 
     return child_detected, child_conf_max, adult_detected, adult_conf_max
 
@@ -110,7 +110,7 @@ def decidir_status_parcial(metrics):
     if (
         metrics["child_presence_ratio"] >= CHILD_MIN_PRESENCE
         and metrics["adult_presence_ratio"] <= ADULT_MAX_PRESENCE
-        and metrics["child_avg_conf"] >= MIN_AVG_CONF
+        and metrics["child_avg_conf"] >= MIN_CHILD_CONF
     ):
         return "CRIANCA_SOZINHA_PARCIAL"
     if metrics["adult_presence_ratio"] > ADULT_MAX_PRESENCE:
@@ -125,14 +125,12 @@ def decidir_final(metrics):
     if (
         metrics["child_presence_ratio"] >= CHILD_MIN_PRESENCE
         and metrics["adult_presence_ratio"] <= ADULT_MAX_PRESENCE
-        and metrics["child_avg_conf"] >= MIN_AVG_CONF
+        and metrics["child_avg_conf"] >= MIN_CHILD_CONF
     ):
         return "ALERT_CHILD_ALONE"
-    if metrics["adult_presence_ratio"] > ADULT_MAX_PRESENCE:
-        return "ADULTO_PRESENTE"
     if metrics["child_presence_ratio"] > 0:
         return "CRIANCA_DETECTADA_MAS_NAO_CONFIRMADA"
-    return "NENHUMA_PRESENCA_CONFIRMADA"
+    return "NO_ALERT"
 
 
 def preparar_csv():

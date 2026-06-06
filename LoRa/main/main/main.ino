@@ -1,160 +1,391 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <ArduinoJson.h>
+#include <SPIFFS.h>
 
+// Instale a biblioteca ArduinoJson pelo Library Manager da IDE Arduino.
 const char* ssid = "Pedro Arthur_2.4GHz";
 const char* password = "Pa29R11T10";
 
 const char* checkCarUrl = "http://192.168.0.11:5000/check_car";
-const char* statusUrl   = "http://192.168.0.11:5000/status";
-const char* resultUrl   = "http://192.168.0.11:5000/last_result";
+const char* statusUrl = "http://192.168.0.11:5000/status";
+const char* resultUrl = "http://192.168.0.11:5000/last_result";
+const char* imageUrl = "http://192.168.0.11:5000/last_image";
 
 const int BOTAO_PIN = 0;
+const unsigned long WIFI_TIMEOUT_MS = 20000;
+const unsigned long HTTP_TIMEOUT_MS = 10000;
+const unsigned long IMAGE_TIMEOUT_MS = 20000;
+const unsigned long POLL_INTERVAL_MS = 3000;
+const unsigned long OBSERVATION_TIMEOUT_MS = 260000;
+const unsigned long DEBOUNCE_MS = 500;
 
-// Simulação da condição externa.
-// Depois outra pessoa troca essa função pela condição real.
+bool botaoAnterior = HIGH;
+unsigned long ultimoClique = 0;
+
+struct HttpResponse {
+  int statusCode;
+  String body;
+  bool ok;
+};
+
+struct ResultadoRaspberry {
+  String finalDecision;
+  float childPresenceRatio;
+  float adultPresenceRatio;
+  float childAvgConf;
+  bool internetOk;
+  bool telegramSent;
+  bool sendToLora;
+  unsigned long timestamp;
+};
+
+void logLinha(const String& mensagem) {
+  Serial.println(mensagem);
+}
+
+void logHeap(const char* contexto) {
+  Serial.print("[MEM] ");
+  Serial.print(contexto);
+  Serial.print(" | heap livre: ");
+  Serial.println(ESP.getFreeHeap());
+}
+
 bool condicaoParaVerificar() {
   return digitalRead(BOTAO_PIN) == LOW;
 }
 
-void conectarWiFi() {
+bool conectarWiFi() {
+  if (WiFi.status() == WL_CONNECTED) {
+    return true;
+  }
+
   WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.persistent(false);
   WiFi.begin(ssid, password);
 
-  Serial.print("Conectando no WiFi");
-
-  while (WiFi.status() != WL_CONNECTED) {
+  Serial.print("[WiFi] Conectando");
+  unsigned long inicio = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - inicio < WIFI_TIMEOUT_MS) {
     delay(500);
     Serial.print(".");
   }
+  Serial.println();
 
-  Serial.println("\nWiFi conectado!");
-  Serial.print("IP: ");
-  Serial.println(WiFi.localIP());
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("[WiFi] Conectado. IP: ");
+    Serial.println(WiFi.localIP());
+    return true;
+  }
+
+  logLinha("[WiFi] Falha ao conectar.");
+  return false;
 }
 
-String httpGET(const char* url) {
-  if (WiFi.status() != WL_CONNECTED) {
-    conectarWiFi();
+HttpResponse httpGET(const char* url) {
+  HttpResponse resposta = {-1, "", false};
+
+  if (!conectarWiFi()) {
+    resposta.body = "ERRO_WIFI";
+    return resposta;
   }
 
   HTTPClient http;
-  http.begin(url);
-  http.setTimeout(8000);
+  http.setTimeout(HTTP_TIMEOUT_MS);
 
-  int httpCode = http.GET();
-  String resposta = "";
-
-  if (httpCode > 0) {
-    resposta = http.getString();
-  } else {
-    resposta = "ERRO_HTTP";
+  if (!http.begin(url)) {
+    resposta.body = "ERRO_HTTP_BEGIN";
+    return resposta;
   }
+
+  resposta.statusCode = http.GET();
+  if (resposta.statusCode > 0) {
+    resposta.body = http.getString();
+    resposta.ok = resposta.statusCode >= 200 && resposta.statusCode < 300;
+  } else {
+    resposta.body = http.errorToString(resposta.statusCode);
+  }
+
+  Serial.print("[HTTP] GET ");
+  Serial.print(url);
+  Serial.print(" -> ");
+  Serial.println(resposta.statusCode);
 
   http.end();
   return resposta;
 }
 
-String extrairDecisao(String json) {
-  if (json.indexOf("ALERT_CHILD_ALONE") >= 0) {
-    return "ALERT_CHILD_ALONE";
+bool extrairStatusJson(const String& body, String& status) {
+  StaticJsonDocument<160> doc;
+  DeserializationError erro = deserializeJson(doc, body);
+  if (erro) {
+    Serial.print("[JSON] Falha ao ler status: ");
+    Serial.println(erro.c_str());
+    return false;
   }
 
-  if (json.indexOf("CRIANCA_SOZINHA_CONFIRMADA") >= 0) {
-    return "CRIANCA_SOZINHA_CONFIRMADA";
-  }
-
-  if (json.indexOf("CRIANCA_DETECTADA_MAS_NAO_CONFIRMADA") >= 0) {
-    return "CRIANCA_DETECTADA_MAS_NAO_CONFIRMADA";
-  }
-
-  if (json.indexOf("ADULTO_PRESENTE") >= 0) {
-    return "ADULTO_PRESENTE";
-  }
-
-  if (json.indexOf("NENHUMA_PRESENCA_CONFIRMADA") >= 0) {
-    return "NENHUMA_PRESENCA_CONFIRMADA";
-  }
-
-  if (json.indexOf("OAKD_NOT_FOUND") >= 0) {
-    return "OAKD_NOT_FOUND";
-  }
-
-  return "RESULTADO_DESCONHECIDO";
+  status = doc["status"] | "";
+  return status.length() > 0;
 }
 
-String consultarRaspberry() {
-  Serial.println("Enviando CHECK_CAR...");
+bool extrairResultadoJson(const String& body, ResultadoRaspberry& resultado) {
+  StaticJsonDocument<768> doc;
+  StaticJsonDocument<256> filtro;
+  filtro["final_decision"] = true;
+  filtro["child_presence_ratio"] = true;
+  filtro["adult_presence_ratio"] = true;
+  filtro["child_avg_conf"] = true;
+  filtro["internet_ok"] = true;
+  filtro["telegram_sent"] = true;
+  filtro["send_to_lora"] = true;
+  filtro["timestamp"] = true;
 
-  String respostaCheck = httpGET(checkCarUrl);
-
-  if (respostaCheck.indexOf("BUSY") >= 0) {
-    Serial.println("Raspberry ocupada. Aguardando resultado...");
-  } 
-  else if (respostaCheck.indexOf("CHECK_STARTED") >= 0) {
-    Serial.println("Verificacao iniciada.");
-  } 
-  else {
-    Serial.println("Falha ao iniciar verificacao.");
-    return "ERRO_CHECK_CAR";
+  DeserializationError erro = deserializeJson(doc, body, DeserializationOption::Filter(filtro));
+  if (erro) {
+    Serial.print("[JSON] Falha ao ler resultado: ");
+    Serial.println(erro.c_str());
+    return false;
   }
 
-  while (true) {
-    delay(3000);
+  resultado.finalDecision = doc["final_decision"] | "ERROR";
+  resultado.childPresenceRatio = doc["child_presence_ratio"] | 0.0;
+  resultado.adultPresenceRatio = doc["adult_presence_ratio"] | 0.0;
+  resultado.childAvgConf = doc["child_avg_conf"] | 0.0;
+  resultado.internetOk = doc["internet_ok"] | false;
+  resultado.telegramSent = doc["telegram_sent"] | false;
+  resultado.sendToLora = doc["send_to_lora"] | false;
+  resultado.timestamp = doc["timestamp"] | 0;
+  return resultado.finalDecision.length() > 0;
+}
 
-    String status = httpGET(statusUrl);
+void imprimirResultadoFinal(const ResultadoRaspberry& resultado) {
+  Serial.println();
+  Serial.println("===== RESULTADO FINAL =====");
+  Serial.print("Decisao: ");
+  Serial.println(resultado.finalDecision);
+  Serial.print("child_presence_ratio: ");
+  Serial.println(resultado.childPresenceRatio, 4);
+  Serial.print("adult_presence_ratio: ");
+  Serial.println(resultado.adultPresenceRatio, 4);
+  Serial.print("child_avg_conf: ");
+  Serial.println(resultado.childAvgConf, 4);
+  Serial.print("internet_ok: ");
+  Serial.println(resultado.internetOk ? "true" : "false");
+  Serial.print("telegram_sent: ");
+  Serial.println(resultado.telegramSent ? "true" : "false");
+  Serial.print("send_to_lora: ");
+  Serial.println(resultado.sendToLora ? "true" : "false");
+
+  if (resultado.finalDecision == "ALERT_CHILD_ALONE") {
+    logLinha("ACAO: alerta de crianca sozinha.");
+    if (!resultado.internetOk) {
+      logLinha("ACAO: sem internet na Raspberry. Usar alternativa local/SMS se existir.");
+    } else if (resultado.telegramSent) {
+      logLinha("ACAO: Telegram enviado pela Raspberry.");
+    } else {
+      logLinha("ACAO: internet existe, mas Telegram nao foi enviado.");
+    }
+  } else if (resultado.finalDecision == "CRIANCA_DETECTADA_MAS_NAO_CONFIRMADA") {
+    logLinha("ACAO: crianca detectada, mas regra estatistica nao confirmou alerta.");
+  } else if (resultado.finalDecision == "NO_ALERT") {
+    logLinha("ACAO: sem alerta.");
+  } else if (resultado.finalDecision == "OAKD_NOT_FOUND") {
+    logLinha("ACAO: verificar cabo/alimentacao da OAK-D.");
+  } else if (resultado.finalDecision == "TIMEOUT") {
+    logLinha("ACAO: observacao excedeu o tempo limite.");
+  } else {
+    logLinha("ACAO: erro ou decisao desconhecida.");
+  }
+
+  Serial.println("===========================");
+  logHeap("apos resultado");
+}
+
+bool baixarUltimaImagemAlerta() {
+  if (!conectarWiFi()) {
+    return false;
+  }
+
+  if (!SPIFFS.begin(true)) {
+    logLinha("[IMG] Falha ao montar SPIFFS.");
+    return false;
+  }
+
+  HTTPClient http;
+  http.setTimeout(IMAGE_TIMEOUT_MS);
+  if (!http.begin(imageUrl)) {
+    logLinha("[IMG] Falha no http.begin.");
+    return false;
+  }
+
+  int httpCode = http.GET();
+  Serial.print("[IMG] GET /last_image -> ");
+  Serial.println(httpCode);
+
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.print("[IMG] Resposta: ");
+    Serial.println(http.getString());
+    http.end();
+    return false;
+  }
+
+  File arquivo = SPIFFS.open("/last_alert.jpg", FILE_WRITE);
+  if (!arquivo) {
+    logLinha("[IMG] Falha ao criar /last_alert.jpg.");
+    http.end();
+    return false;
+  }
+
+  WiFiClient* stream = http.getStreamPtr();
+  uint8_t buffer[512];
+  int tamanhoRestante = http.getSize();
+  size_t bytesBaixados = 0;
+  unsigned long ultimoDado = millis();
+
+  while (http.connected() && (tamanhoRestante > 0 || tamanhoRestante == -1)) {
+    size_t disponivel = stream->available();
+    if (disponivel > 0) {
+      size_t leitura = stream->readBytes(buffer, min(disponivel, sizeof(buffer)));
+      arquivo.write(buffer, leitura);
+      bytesBaixados += leitura;
+      ultimoDado = millis();
+
+      if (tamanhoRestante > 0) {
+        tamanhoRestante -= leitura;
+      }
+    } else {
+      if (millis() - ultimoDado > IMAGE_TIMEOUT_MS) {
+        logLinha("[IMG] Timeout durante download.");
+        break;
+      }
+      delay(10);
+    }
+  }
+
+  arquivo.close();
+  http.end();
+
+  Serial.print("[IMG] Salva em SPIFFS: /last_alert.jpg | bytes=");
+  Serial.println(bytesBaixados);
+  logHeap("apos download da imagem");
+  return bytesBaixados > 0;
+}
+
+bool consultarUltimoResultado(ResultadoRaspberry& resultado) {
+  logLinha("[RPI] Consultando /last_result...");
+  HttpResponse resposta = httpGET(resultUrl);
+  if (!resposta.ok) {
+    Serial.print("[RPI] Falha em /last_result. HTTP=");
+    Serial.println(resposta.statusCode);
+    return false;
+  }
+
+  Serial.print("[RPI] JSON: ");
+  Serial.println(resposta.body);
+  return extrairResultadoJson(resposta.body, resultado);
+}
+
+bool aguardarResultado(ResultadoRaspberry& resultado) {
+  logLinha("[RPI] Aguardando fim da observacao...");
+  unsigned long inicio = millis();
+  int falhasConsecutivas = 0;
+
+  while (millis() - inicio < OBSERVATION_TIMEOUT_MS) {
+    delay(POLL_INTERVAL_MS);
+
+    HttpResponse respostaStatus = httpGET(statusUrl);
+    if (!respostaStatus.ok) {
+      falhasConsecutivas++;
+      Serial.print("[RPI] Falha ao consultar /status. Tentativa ");
+      Serial.println(falhasConsecutivas);
+      if (falhasConsecutivas >= 5) {
+        return false;
+      }
+      continue;
+    }
+
+    falhasConsecutivas = 0;
+    String status;
+    if (!extrairStatusJson(respostaStatus.body, status)) {
+      return false;
+    }
+
+    Serial.print("[RPI] Status: ");
     Serial.println(status);
 
-    if (status.indexOf("FINISHED") >= 0 || status.indexOf("IDLE") >= 0) {
-      String resultadoJson = httpGET(resultUrl);
-      String decisao = extrairDecisao(resultadoJson);
-
-      Serial.print("Decisao final: ");
-      Serial.println(decisao);
-
-      return decisao;
+    if (status == "FINISHED" || status == "IDLE") {
+      return consultarUltimoResultado(resultado);
     }
 
-    if (status.indexOf("RUNNING") >= 0) {
-      Serial.println("Ainda verificando...");
+    if (status != "RUNNING") {
+      Serial.print("[RPI] Status inesperado: ");
+      Serial.println(status);
     }
   }
+
+  logLinha("[RPI] Timeout local aguardando resultado.");
+  return false;
 }
 
-void tratarResposta(String resposta) {
-  if (resposta == "ALERT_CHILD_ALONE" || resposta == "CRIANCA_SOZINHA_CONFIRMADA") {
-    Serial.println("ACAO: alerta de crianca sozinha");
-  } 
-  else if (resposta == "ADULTO_PRESENTE") {
-    Serial.println("ACAO: adulto presente, sem alerta");
-  } 
-  else if (resposta == "CRIANCA_DETECTADA_MAS_NAO_CONFIRMADA") {
-    Serial.println("ACAO: crianca detectada, mas nao confirmada");
-  } 
-  else if (resposta == "NENHUMA_PRESENCA_CONFIRMADA") {
-    Serial.println("ACAO: nenhuma presenca confirmada");
-  } 
-  else {
-    Serial.print("ACAO: erro ou resultado desconhecido: ");
-    Serial.println(resposta);
+bool enviarCheckCar(ResultadoRaspberry& resultado) {
+  logLinha("[RPI] Enviando /check_car...");
+  HttpResponse resposta = httpGET(checkCarUrl);
+  if (!resposta.ok) {
+    Serial.print("[RPI] Falha em /check_car. HTTP=");
+    Serial.println(resposta.statusCode);
+    return false;
   }
+
+  String status;
+  if (!extrairStatusJson(resposta.body, status)) {
+    return false;
+  }
+
+  Serial.print("[RPI] Resposta /check_car: ");
+  Serial.println(status);
+
+  if (status == "CHECK_STARTED" || status == "BUSY") {
+    return aguardarResultado(resultado);
+  }
+
+  Serial.print("[RPI] Resposta inesperada em /check_car: ");
+  Serial.println(status);
+  return false;
 }
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
-
   pinMode(BOTAO_PIN, INPUT_PULLUP);
 
-  Serial.println("===== LoRa 32 V2 - Modulo de Consulta Raspberry =====");
-
+  Serial.println("===== Heltec LoRa 32 V2 - Controle Raspberry =====");
   conectarWiFi();
+  SPIFFS.begin(true);
+  logHeap("setup");
+  Serial.println("Pressione o botao PRG/BOOT para enviar CHECK_CAR.");
 }
 
 void loop() {
-  if (condicaoParaVerificar()) {
-    String resposta = consultarRaspberry();
-    tratarResposta(resposta);
+  bool botaoAtual = digitalRead(BOTAO_PIN);
 
-    delay(3000); // evita repetir várias vezes segurando o botão
+  if (botaoAnterior == HIGH && botaoAtual == LOW) {
+    unsigned long agora = millis();
+    if (agora - ultimoClique > DEBOUNCE_MS) {
+      ultimoClique = agora;
+
+      ResultadoRaspberry resultado;
+      if (enviarCheckCar(resultado)) {
+        imprimirResultadoFinal(resultado);
+        if (resultado.finalDecision == "ALERT_CHILD_ALONE") {
+          baixarUltimaImagemAlerta();
+        }
+      } else {
+        logLinha("[ERRO] Nao foi possivel concluir a consulta na Raspberry.");
+      }
+    }
   }
+
+  botaoAnterior = botaoAtual;
+  delay(20);
 }

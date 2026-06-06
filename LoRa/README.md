@@ -1,78 +1,72 @@
-# Sistema de Comunicação LoRa 32 V2
+# Sistema de Comunicacao Heltec LoRa 32 V2
 
 ## Hardware
 
-* Heltec WiFi LoRa 32 V2
+* Heltec WiFi LoRa 32 V2 / ESP32
+* Raspberry Pi executando Flask
 
-## Objetivo
+## Dependencias Arduino
 
-Enviar comando de verificação para a Raspberry Pi e receber o resultado final da análise.
+Instale pelo Library Manager da IDE Arduino:
+
+* ArduinoJson
+
+As bibliotecas `WiFi`, `HTTPClient` e `SPIFFS` ja fazem parte do core ESP32.
 
 ## Fluxo
 
-PRG
-↓
-CHECK_CAR
-↓
-Raspberry
-↓
-OAK-D
-↓
-YOLOv8
-↓
-Resultado
-↓
-LoRa
+1. Usuario pressiona o botao PRG/BOOT.
+2. A Heltec envia `GET /check_car`.
+3. A Raspberry inicia a observacao OAK-D + YOLOv8 OpenVINO.
+4. A Heltec consulta `GET /status` ate receber `FINISHED`.
+5. A Heltec consulta `GET /last_result` e interpreta o JSON com ArduinoJson.
+6. Se `final_decision == "ALERT_CHILD_ALONE"`, a Heltec baixa `GET /last_image` para `/last_alert.jpg` no SPIFFS.
 
 ## Endpoints utilizados
 
-/check_car
+```text
+GET /check_car
+GET /status
+GET /last_result
+GET /last_image
+```
 
-/status
+## Configuracao
 
-/last_result
+Atualize nos sketches:
 
-## Configuração Wi-Fi
+```cpp
+const char* ssid = "...";
+const char* password = "...";
 
-const char\* ssid = "...";
+const char* checkCarUrl = "http://192.168.0.11:5000/check_car";
+const char* statusUrl = "http://192.168.0.11:5000/status";
+const char* resultUrl = "http://192.168.0.11:5000/last_result";
+const char* imageUrl = "http://192.168.0.11:5000/last_image";
+```
 
-const char\* password = "...";
+## Decisoes esperadas
 
-## Configuração da Raspberry
-
-const char\* checkCarUrl =
-"<http://192.168.0.11:5000/check_car>";
-
-const char\* statusUrl =
-"<http://192.168.0.11:5000/status>";
-
-const char\* resultUrl =
-"<http://192.168.0.11:5000/last_result>";
-
-## Resultados possíveis
-
-CRIANCA_SOZINHA_CONFIRMADA
-
+```text
+ALERT_CHILD_ALONE
 CRIANCA_DETECTADA_MAS_NAO_CONFIRMADA
-
-ADULTO_PRESENTE
-
-NENHUMA_PRESENCA_CONFIRMADA
-
+NO_ALERT
 OAKD_NOT_FOUND
+TIMEOUT
+ERROR
+```
 
-## Informação de Internet
+## Campos esperados em /last_result
 
-internet = true
-
-internet = false
-
-## Exemplo
-
-if (resposta == "CRIANCA_SOZINHA_CONFIRMADA") {
-
+```json
+{
+  "final_decision": "NO_ALERT",
+  "child_presence_ratio": 0.0,
+  "adult_presence_ratio": 0.0,
+  "child_avg_conf": 0.0,
+  "internet_ok": true,
+  "telegram_sent": false,
+  "send_to_lora": true,
+  "timestamp": 0
 }
-
-if (internet == true) {
-
-}
+```
