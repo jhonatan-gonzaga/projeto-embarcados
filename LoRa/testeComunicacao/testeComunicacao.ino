@@ -4,8 +4,8 @@
 const char* ssid = "Pedro Arthur_2.4GHz";
 const char* password = "Pa29R11T10";
 
-// TESTE com 10 segundos
-const char* checkCarUrl = "http://192.168.0.11:5000/check_car?duration=10&sample_interval=1.0";
+
+const char* checkCarUrl = "http://192.168.0.11:5000/check_car";
 const char* statusUrl   = "http://192.168.0.11:5000/status";
 const char* resultUrl   = "http://192.168.0.11:5000/last_result";
 
@@ -76,20 +76,12 @@ String httpGET(const char* url) {
 }
 
 String extrairDecisao(String resposta) {
-  if (resposta.indexOf("CRIANCA_SOZINHA_CONFIRMADA") >= 0) {
-    return "CRIANCA_SOZINHA_CONFIRMADA";
+  if (resposta.indexOf("ALERT_CHILD_ALONE") >= 0) {
+    return "ALERT_CHILD_ALONE";
   }
 
-  if (resposta.indexOf("CRIANCA_DETECTADA_MAS_NAO_CONFIRMADA") >= 0) {
-    return "CRIANCA_DETECTADA_MAS_NAO_CONFIRMADA";
-  }
-
-  if (resposta.indexOf("ADULTO_PRESENTE") >= 0) {
-    return "ADULTO_PRESENTE";
-  }
-
-  if (resposta.indexOf("NENHUMA_PRESENCA_CONFIRMADA") >= 0) {
-    return "NENHUMA_PRESENCA_CONFIRMADA";
+  if (resposta.indexOf("NO_ALERT") >= 0) {
+    return "NO_ALERT";
   }
 
   if (resposta.indexOf("OAKD_NOT_FOUND") >= 0) {
@@ -108,11 +100,11 @@ String extrairDecisao(String resposta) {
 }
 
 bool extrairInternet(String resposta) {
-  if (resposta.indexOf("\"internet\":true") >= 0) {
+  if (resposta.indexOf("\"internet_ok\":true") >= 0) {
     return true;
   }
 
-  if (resposta.indexOf("\"internet\": true") >= 0) {
+  if (resposta.indexOf("\"internet_ok\": true") >= 0) {
     return true;
   }
 
@@ -129,7 +121,7 @@ void imprimirResultadoFinal(String decisao, bool internet) {
   Serial.print("Internet: ");
   Serial.println(internet ? "true" : "false");
 
-  if (decisao == "CRIANCA_SOZINHA_CONFIRMADA") {
+  if (decisao == "ALERT_CHILD_ALONE" || decisao == "CRIANCA_SOZINHA_CONFIRMADA") {
     Serial.println("RESULTADO: CRIANCA SOZINHA CONFIRMADA");
 
     if (internet) {

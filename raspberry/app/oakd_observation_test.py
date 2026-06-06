@@ -29,8 +29,11 @@ MIN_AVG_CONF = 0.60
 ADULT_CLASSES = ["adult", "adultface"]
 CHILD_CLASSES = ["child"]
 
-REPORT_PATH = Path("../results/reports/oakd_observation.csv")
-SUMMARY_PATH = Path("../results/reports/oakd_observation_summary.txt")
+APP_DIR = Path(__file__).resolve().parent
+RESULTS_DIR = APP_DIR / "../results"
+REPORT_PATH = RESULTS_DIR / "reports/oakd_observation.csv"
+SUMMARY_PATH = RESULTS_DIR / "reports/oakd_observation_summary.txt"
+LAST_ALERT_IMAGE_PATH = RESULTS_DIR / "images/last_child_alert.jpg"
 
 
 def normalizar_classe(class_name):
@@ -60,6 +63,21 @@ def analisar_resultado(result):
     adult_detected = adult_conf_max >= MIN_AVG_CONF
 
     return child_detected, child_conf_max, adult_detected, adult_conf_max
+
+
+def obter_melhor_child_conf(result):
+    """Retorna a maior confianca da classe child, mesmo antes da decisao final."""
+    best_conf = 0.0
+
+    for box in result.boxes:
+        class_id = int(box.cls[0])
+        class_name = normalizar_classe(result.names[class_id])
+        confidence = float(box.conf[0])
+
+        if class_name in CHILD_CLASSES:
+            best_conf = max(best_conf, confidence)
+
+    return best_conf
 
 
 def calcular_metricas(samples):
@@ -109,7 +127,7 @@ def decidir_final(metrics):
         and metrics["adult_presence_ratio"] <= ADULT_MAX_PRESENCE
         and metrics["child_avg_conf"] >= MIN_AVG_CONF
     ):
-        return "CRIANCA_SOZINHA_CONFIRMADA"
+        return "ALERT_CHILD_ALONE"
     if metrics["adult_presence_ratio"] > ADULT_MAX_PRESENCE:
         return "ADULTO_PRESENTE"
     if metrics["child_presence_ratio"] > 0:
@@ -154,7 +172,7 @@ def salvar_amostra(writer, sample, metrics, partial_status):
     )
 
 
-def salvar_resumo(metrics, final_decision):
+def salvar_resumo(metrics, final_decision, best_child_conf=0.0, alert_image_path=""):
     """Salva resumo final em TXT."""
     SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
     with SUMMARY_PATH.open("w", encoding="utf-8") as file:
@@ -166,6 +184,15 @@ def salvar_resumo(metrics, final_decision):
         file.write(f"child_avg_conf: {metrics['child_avg_conf']:.4f}\n")
         file.write(f"adult_avg_conf: {metrics['adult_avg_conf']:.4f}\n")
         file.write(f"final_decision: {final_decision}\n")
+        file.write(f"best_child_conf: {best_child_conf:.4f}\n")
+        file.write(f"alert_image_path: {alert_image_path}\n")
+
+
+def salvar_frame_alerta(frame):
+    """Salva a imagem do ultimo alerta para consulta pelo endpoint Flask."""
+    LAST_ALERT_IMAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(LAST_ALERT_IMAGE_PATH), frame)
+    return str(LAST_ALERT_IMAGE_PATH)
 
 
 def desenhar_tela(frame, remaining_seconds, metrics, partial_status):
@@ -182,10 +209,12 @@ def desenhar_tela(frame, remaining_seconds, metrics, partial_status):
     return frame
 
 
-def executar_observacao(model, queue, duration, sample_interval):
+def executar_observacao(model, queue, duration, sample_interval, show_window=True):
     """Executa observacao por tempo limitado, amostrando a cada intervalo."""
     samples = []
     csv_file, csv_writer = preparar_csv()
+    best_child_frame = None
+    best_child_conf = 0.0
 
     warmup_packet = queue.get()
     warmup_frame = warmup_packet.getCvFrame()
@@ -217,6 +246,12 @@ def executar_observacao(model, queue, duration, sample_interval):
             if now >= next_sample_time:
                 result = executar_inferencia(model, frame)
                 child_detected, child_conf_max, adult_detected, adult_conf_max = analisar_resultado(result)
+                raw_child_conf = obter_melhor_child_conf(result)
+
+                # Guarda o frame mais forte de child para anexar ao alerta final.
+                if raw_child_conf > best_child_conf:
+                    best_child_conf = raw_child_conf
+                    best_child_frame = frame.copy()
 
                 sample_index += 1
                 sample = {
@@ -247,18 +282,29 @@ def executar_observacao(model, queue, duration, sample_interval):
                 # Isso evita rajadas quando a primeira inferencia demora.
                 next_sample_time = time.perf_counter() + sample_interval
 
-            display = desenhar_tela(frame.copy(), remaining, metrics, partial_status)
-            cv2.imshow("OAK-D Observation Mode", display)
+            if show_window:
+                display = desenhar_tela(frame.copy(), remaining, metrics, partial_status)
+                cv2.imshow("OAK-D Observation Mode", display)
 
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            if show_window and cv2.waitKey(1) & 0xFF == ord("q"):
                 break
     finally:
         csv_file.close()
-        cv2.destroyAllWindows()
+        if show_window:
+            cv2.destroyAllWindows()
 
     metrics = calcular_metricas(samples)
     final_decision = decidir_final(metrics)
-    salvar_resumo(metrics, final_decision)
+    alert_image_path = ""
+
+    if final_decision == "ALERT_CHILD_ALONE" and best_child_frame is not None:
+        try:
+            alert_image_path = salvar_frame_alerta(best_child_frame)
+        except Exception as error:
+            # A decisao nao deve ser perdida se houver falha de escrita da imagem.
+            print(f"Falha ao salvar frame do alerta: {error}")
+
+    salvar_resumo(metrics, final_decision, best_child_conf, alert_image_path)
 
     print("\nResumo final")
     print("-" * 40)
@@ -270,6 +316,8 @@ def executar_observacao(model, queue, duration, sample_interval):
     print(f"child_avg_conf: {metrics['child_avg_conf']:.4f}")
     print(f"adult_avg_conf: {metrics['adult_avg_conf']:.4f}")
     print(f"final_decision: {final_decision}")
+    print(f"best_child_conf: {best_child_conf:.4f}")
+    print(f"alert_image_path: {alert_image_path}")
     print(f"CSV salvo em: {REPORT_PATH}")
     print(f"Resumo salvo em: {SUMMARY_PATH}")
 
@@ -281,6 +329,7 @@ def main():
     parser.add_argument("--model", default="../models/best_yolov8n_openvino_model", help="Pasta do modelo OpenVINO.")
     parser.add_argument("--duration", type=float, default=OBSERVATION_SECONDS, help="Duracao da observacao em segundos.")
     parser.add_argument("--sample-interval", type=float, default=SAMPLE_INTERVAL, help="Intervalo entre amostras em segundos.")
+    parser.add_argument("--no-display", action="store_true", help="Executa sem abrir janela OpenCV, ideal para Flask/headless.")
     args = parser.parse_args()
 
     if args.duration <= 0:
@@ -297,11 +346,11 @@ def main():
     if api_version == "v3":
         with pipeline:
             pipeline.start()
-            executar_observacao(model, queue_info, args.duration, args.sample_interval)
+            executar_observacao(model, queue_info, args.duration, args.sample_interval, show_window=not args.no_display)
     else:
         with dai.Device(pipeline) as device:
             queue = device.getOutputQueue(name=queue_info, maxSize=4, blocking=False)
-            executar_observacao(model, queue, args.duration, args.sample_interval)
+            executar_observacao(model, queue, args.duration, args.sample_interval, show_window=not args.no_display)
 
 
 if __name__ == "__main__":

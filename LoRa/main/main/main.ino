@@ -55,6 +55,10 @@ String httpGET(const char* url) {
 }
 
 String extrairDecisao(String json) {
+  if (json.indexOf("ALERT_CHILD_ALONE") >= 0) {
+    return "ALERT_CHILD_ALONE";
+  }
+
   if (json.indexOf("CRIANCA_SOZINHA_CONFIRMADA") >= 0) {
     return "CRIANCA_SOZINHA_CONFIRMADA";
   }
@@ -117,7 +121,7 @@ String consultarRaspberry() {
 }
 
 void tratarResposta(String resposta) {
-  if (resposta == "CRIANCA_SOZINHA_CONFIRMADA") {
+  if (resposta == "ALERT_CHILD_ALONE" || resposta == "CRIANCA_SOZINHA_CONFIRMADA") {
     Serial.println("ACAO: alerta de crianca sozinha");
   } 
   else if (resposta == "ADULTO_PRESENTE") {
