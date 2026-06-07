@@ -45,6 +45,7 @@ state_lock = threading.Lock()
 server_state = "IDLE"
 last_result = None
 current_process = None
+latest_sensor_data = None
 
 
 def tem_internet():
@@ -123,6 +124,18 @@ def montar_image_info():
         "path": str(image_path),
         "timestamp": resumo_float(summary, "best_child_timestamp"),
     }
+
+
+def converter_sensor_float(data, key):
+    """Converte campo numerico recebido do ESP32 para float."""
+    try:
+        value = float(data[key])
+    except KeyError as error:
+        raise ValueError(f"Campo obrigatorio ausente: {key}") from error
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"Campo invalido: {key}") from error
+
+    return value
 
 
 def enviar_telegram_mensagem(texto):
@@ -344,6 +357,50 @@ def health():
     """Endpoint simples para verificar se o Flask esta ativo."""
     logger.info("GET /health")
     return jsonify({"status": "ok"})
+
+
+@app.post("/sensor_data")
+def receber_sensor_data():
+    """Recebe dados simulados de sensores enviados pela Heltec/ESP32."""
+    global latest_sensor_data
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        logger.warning("POST /sensor_data com JSON ausente ou invalido.")
+        return jsonify({"status": "INVALID_JSON"}), 400
+
+    try:
+        sensor_data = {
+            "co2": converter_sensor_float(data, "co2"),
+            "temperatura": converter_sensor_float(data, "temperatura"),
+            "humidade": converter_sensor_float(data, "humidade"),
+            "timestamp": time.time(),
+        }
+    except ValueError as error:
+        logger.warning("POST /sensor_data invalido: %s", error)
+        return jsonify({"status": "INVALID_DATA", "error": str(error)}), 400
+
+    with state_lock:
+        latest_sensor_data = sensor_data
+
+    logger.info(
+        "POST /sensor_data -> co2=%.2f temperatura=%.2f humidade=%.2f",
+        sensor_data["co2"],
+        sensor_data["temperatura"],
+        sensor_data["humidade"],
+    )
+    return jsonify({"status": "OK"})
+
+
+@app.get("/latest_sensor_data")
+def get_latest_sensor_data():
+    """Retorna o ultimo pacote de sensores simulados recebido."""
+    with state_lock:
+        if latest_sensor_data is None:
+            logger.info("GET /latest_sensor_data -> NO_SENSOR_DATA")
+            return jsonify({"status": "NO_SENSOR_DATA"}), 404
+        logger.info("GET /latest_sensor_data -> OK")
+        return jsonify(latest_sensor_data)
 
 
 @app.get("/status")
