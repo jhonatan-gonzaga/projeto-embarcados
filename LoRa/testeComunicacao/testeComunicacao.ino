@@ -6,7 +6,7 @@
 const char* ssid = "Pedro Arthur_2.4GHz";
 const char* password = "Pa29R11T10";
 
-const char* checkCarUrl = "http://192.168.0.11:5000/check_car?duration=10&sample_interval=1.0";
+const char* checkCarUrl = "http://192.168.0.11:5000/check_car?duration=20&sample_interval=1.0&debug_detections=true&yolo_conf=0.05";
 const char* statusUrl = "http://192.168.0.11:5000/status";
 const char* resultUrl = "http://192.168.0.11:5000/last_result";
 
