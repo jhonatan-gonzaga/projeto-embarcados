@@ -65,12 +65,14 @@ def extrair_deteccoes(result):
         class_name = str(obter_nome_classe(result.names, class_id))
         normalized = normalizar_classe(class_name)
         confidence = float(box.conf[0])
+        x1, y1, x2, y2 = [int(value) for value in box.xyxy[0].tolist()]
         detections.append(
             {
                 "class_id": class_id,
                 "class_name": class_name,
                 "normalized": normalized,
                 "confidence": confidence,
+                "xyxy": (x1, y1, x2, y2),
             }
         )
 
@@ -160,6 +162,19 @@ def obter_melhor_child_conf(result, detections=None):
             best_conf = max(best_conf, detection["confidence"])
 
     return best_conf
+
+
+def obter_melhor_child_detection(detections):
+    """Retorna a deteccao child com maior confianca no frame atual."""
+    best_detection = None
+
+    for detection in detections:
+        if detection["normalized"] not in CHILD_CLASSES:
+            continue
+        if best_detection is None or detection["confidence"] > best_detection["confidence"]:
+            best_detection = detection
+
+    return best_detection
 
 
 def calcular_metricas(samples):
@@ -264,7 +279,7 @@ def salvar_amostra(writer, sample, metrics, partial_status):
     )
 
 
-def salvar_resumo(metrics, final_decision, best_child_conf=0.0, alert_image_path=""):
+def salvar_resumo(metrics, final_decision, best_child_conf=0.0, alert_image_path="", best_child_timestamp=0.0):
     """Salva resumo final em TXT."""
     SUMMARY_PATH.parent.mkdir(parents=True, exist_ok=True)
     with SUMMARY_PATH.open("w", encoding="utf-8") as file:
@@ -278,12 +293,41 @@ def salvar_resumo(metrics, final_decision, best_child_conf=0.0, alert_image_path
         file.write(f"final_decision: {final_decision}\n")
         file.write(f"best_child_conf: {best_child_conf:.4f}\n")
         file.write(f"alert_image_path: {alert_image_path}\n")
+        file.write(f"best_child_timestamp: {best_child_timestamp:.6f}\n")
 
 
-def salvar_frame_alerta(frame):
-    """Salva a imagem do ultimo alerta para consulta pelo endpoint Flask."""
+def desenhar_frame_melhor_child(frame, detections, final_decision, timestamp):
+    """Desenha boxes, classes, confiancas, timestamp e decisao no melhor frame."""
+    annotated = frame.copy()
+    readable_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
+
+    for detection in detections:
+        x1, y1, x2, y2 = detection["xyxy"]
+        is_child = detection["normalized"] in CHILD_CLASSES
+        color = (0, 255, 0) if is_child else (0, 180, 255)
+        label = f"{detection['class_name']} {detection['confidence']:.2f}"
+
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
+        label_y = max(20, y1 - 8)
+        cv2.putText(annotated, label, (x1, label_y), cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2)
+
+    cv2.putText(annotated, f"timestamp: {readable_time}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
+    cv2.putText(annotated, f"final_decision: {final_decision}", (20, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2)
+    return annotated
+
+
+def salvar_frame_alerta(frame, detections, final_decision, timestamp):
+    """Salva a imagem anotada do melhor frame child para consulta pelo Flask."""
+    if frame is None or frame.size == 0:
+        raise RuntimeError("Frame vazio; imagem nao sera salva.")
+    if not any(detection["normalized"] in CHILD_CLASSES for detection in detections):
+        raise RuntimeError("Nenhuma box child encontrada nas deteccoes do melhor frame.")
+
     LAST_ALERT_IMAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(LAST_ALERT_IMAGE_PATH), frame)
+    annotated = desenhar_frame_melhor_child(frame, detections, final_decision, timestamp)
+    saved = cv2.imwrite(str(LAST_ALERT_IMAGE_PATH), annotated)
+    if not saved or not LAST_ALERT_IMAGE_PATH.exists() or LAST_ALERT_IMAGE_PATH.stat().st_size <= 0:
+        raise RuntimeError(f"Falha ao salvar imagem valida em {LAST_ALERT_IMAGE_PATH}")
     return str(LAST_ALERT_IMAGE_PATH)
 
 
@@ -301,13 +345,19 @@ def desenhar_tela(frame, remaining_seconds, metrics, partial_status):
     return frame
 
 
-def executar_observacao(model, queue, duration, sample_interval, show_window=True, debug=False, yolo_conf=DIAGNOSTIC_YOLO_CONF):
+def executar_observacao(model, queue, duration, sample_interval, show_window=True, debug=False, yolo_conf=DIAGNOSTIC_YOLO_CONF, save_best_frame=False):
     """Executa observacao por tempo limitado, amostrando a cada intervalo."""
     samples = []
     csv_file, csv_writer = preparar_csv()
     debug_log_file = preparar_debug_log()
     best_child_frame = None
+    best_child_detections = []
     best_child_conf = 0.0
+    best_child_timestamp = 0.0
+
+    if save_best_frame and LAST_ALERT_IMAGE_PATH.exists():
+        LAST_ALERT_IMAGE_PATH.unlink()
+        log_diagnostico(debug_log_file, f"Imagem anterior removida: {LAST_ALERT_IMAGE_PATH}")
 
     warmup_packet = queue.get()
     warmup_frame = warmup_packet.getCvFrame()
@@ -358,11 +408,19 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
                     log_file=debug_log_file,
                 )
                 raw_child_conf = obter_melhor_child_conf(result, detections=detections)
+                best_child_detection = obter_melhor_child_detection(detections)
 
-                # Guarda o frame mais forte de child para anexar ao alerta final.
-                if raw_child_conf > best_child_conf:
+                # Mantem apenas uma copia do melhor frame para evitar crescimento de memoria.
+                if best_child_detection is not None and best_child_detection["confidence"] > best_child_conf:
+                    previous_conf = best_child_conf
+                    new_conf = best_child_detection["confidence"]
                     best_child_conf = raw_child_conf
                     best_child_frame = frame.copy()
+                    best_child_detections = list(detections)
+                    best_child_timestamp = time.time()
+                    log_diagnostico(debug_log_file, "Novo melhor frame encontrado.")
+                    log_diagnostico(debug_log_file, f"Confianca anterior: {previous_conf:.4f}")
+                    log_diagnostico(debug_log_file, f"Nova confianca: {new_conf:.4f}")
 
                 sample_index += 1
                 sample = {
@@ -408,7 +466,6 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
                 break
     finally:
         csv_file.close()
-        debug_log_file.close()
         if show_window:
             cv2.destroyAllWindows()
 
@@ -416,14 +473,25 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
     final_decision = decidir_final(metrics)
     alert_image_path = ""
 
-    if final_decision == "ALERT_CHILD_ALONE" and best_child_frame is not None:
+    if save_best_frame and best_child_frame is not None:
         try:
-            alert_image_path = salvar_frame_alerta(best_child_frame)
+            alert_image_path = salvar_frame_alerta(
+                best_child_frame,
+                best_child_detections,
+                final_decision,
+                best_child_timestamp,
+            )
+            log_diagnostico(debug_log_file, "Melhor frame salvo:")
+            log_diagnostico(debug_log_file, alert_image_path)
+            log_diagnostico(debug_log_file, "Confianca:")
+            log_diagnostico(debug_log_file, f"{best_child_conf:.4f}")
         except Exception as error:
             # A decisao nao deve ser perdida se houver falha de escrita da imagem.
-            print(f"Falha ao salvar frame do alerta: {error}")
+            log_diagnostico(debug_log_file, f"Falha ao salvar frame do alerta: {error}")
+    elif save_best_frame:
+        log_diagnostico(debug_log_file, "Nenhuma deteccao child encontrada; melhor frame nao foi salvo.")
 
-    salvar_resumo(metrics, final_decision, best_child_conf, alert_image_path)
+    salvar_resumo(metrics, final_decision, best_child_conf, alert_image_path, best_child_timestamp)
 
     print("\nResumo final")
     print("-" * 40)
@@ -440,6 +508,7 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
     print(f"CSV salvo em: {REPORT_PATH}")
     print(f"Resumo salvo em: {SUMMARY_PATH}")
     print(f"Diagnostico salvo em: {DEBUG_LOG_PATH}")
+    debug_log_file.close()
 
     return last_frame, metrics, final_decision
 
@@ -452,6 +521,7 @@ def main():
     parser.add_argument("--no-display", action="store_true", help="Executa sem abrir janela OpenCV, ideal para Flask/headless.")
     parser.add_argument("--debug-detections", action="store_true", help="Imprime todas as deteccoes antes dos filtros.")
     parser.add_argument("--yolo-conf", type=float, default=DIAGNOSTIC_YOLO_CONF, help=f"Limiar bruto do YOLO antes dos filtros. Padrao diagnostico: {DIAGNOSTIC_YOLO_CONF}. Padrao do teste YOLO: {CONF_THRESHOLD}.")
+    parser.add_argument("--save-best-frame", action="store_true", help="Salva o melhor frame child anotado em results/images/last_child_alert.jpg.")
     args = parser.parse_args()
 
     if args.duration <= 0:
@@ -478,6 +548,7 @@ def main():
                 show_window=not args.no_display,
                 debug=args.debug_detections,
                 yolo_conf=args.yolo_conf,
+                save_best_frame=args.save_best_frame,
             )
     else:
         with dai.Device(pipeline) as device:
@@ -490,6 +561,7 @@ def main():
                 show_window=not args.no_display,
                 debug=args.debug_detections,
                 yolo_conf=args.yolo_conf,
+                save_best_frame=args.save_best_frame,
             )
 
 

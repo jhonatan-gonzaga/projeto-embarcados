@@ -111,6 +111,20 @@ def obter_caminho_imagem_alerta(summary):
     return image_path.resolve()
 
 
+def montar_image_info():
+    """Monta metadados da ultima imagem salva do melhor frame child."""
+    summary = ler_resumo()
+    image_path = obter_caminho_imagem_alerta(summary)
+    exists = image_path.exists() and image_path.stat().st_size > 0
+
+    return {
+        "exists": exists,
+        "best_child_conf": resumo_float(summary, "best_child_conf"),
+        "path": str(image_path),
+        "timestamp": resumo_float(summary, "best_child_timestamp"),
+    }
+
+
 def enviar_telegram_mensagem(texto):
     """Envia mensagem Telegram usando TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID."""
     token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -361,6 +375,14 @@ def get_last_image():
     return send_file(LAST_ALERT_IMAGE_PATH, mimetype="image/jpeg")
 
 
+@app.get("/image_info")
+def get_image_info():
+    """Retorna metadados do melhor frame child salvo."""
+    info = montar_image_info()
+    logger.info("GET /image_info -> exists=%s conf=%.4f", info["exists"], info["best_child_conf"])
+    return jsonify(info)
+
+
 @app.get("/check_car")
 def check_car():
     """Inicia a observacao em background, ou informa BUSY se ja estiver rodando."""
@@ -402,6 +424,7 @@ def check_car():
         "--no-display",
         "--yolo-conf",
         str(yolo_conf),
+        "--save-best-frame",
     ]
     if debug_detections:
         command.append("--debug-detections")
