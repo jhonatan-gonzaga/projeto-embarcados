@@ -17,7 +17,7 @@ from pathlib import Path
 import cv2
 import depthai as dai
 
-from oakd_yolo_test import carregar_modelo, executar_inferencia, inicializar_camera, listar_dispositivos
+from oakd_yolo_test import CONF_THRESHOLD, carregar_modelo, executar_inferencia, inicializar_camera, listar_dispositivos
 
 
 OBSERVATION_SECONDS = 180
@@ -26,6 +26,7 @@ CHILD_MIN_PRESENCE = 0.20
 ADULT_MAX_PRESENCE = 0.05
 MIN_CHILD_CONF = 0.60
 MIN_ADULT_CONF = MIN_CHILD_CONF
+DIAGNOSTIC_YOLO_CONF = 0.25
 
 ADULT_CLASSES = ["adult", "adultface"]
 CHILD_CLASSES = ["child"]
@@ -34,48 +35,129 @@ APP_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = APP_DIR / "../results"
 REPORT_PATH = RESULTS_DIR / "reports/oakd_observation.csv"
 SUMMARY_PATH = RESULTS_DIR / "reports/oakd_observation_summary.txt"
+DEBUG_LOG_PATH = RESULTS_DIR / "reports/oakd_observation_debug.log"
 LAST_ALERT_IMAGE_PATH = RESULTS_DIR / "images/last_child_alert.jpg"
 
 
 def normalizar_classe(class_name):
     """Normaliza nomes de classe para comparar sem depender de maiusculas."""
-    return str(class_name).strip().lower()
+    return str(class_name).strip().lower().replace("-", "").replace("_", "").replace(" ", "")
 
 
-def analisar_resultado(result):
-    """Extrai maior confianca de child e adult/adultface acima do limiar."""
-    child_conf_max = 0.0
-    adult_conf_max = 0.0
+def obter_nome_classe(names, class_id):
+    """Obtem nome de classe em modelos que usam dict ou lista."""
+    if hasattr(names, "get"):
+        return names.get(class_id, f"class_{class_id}")
+    if 0 <= class_id < len(names):
+        return names[class_id]
+    return f"class_{class_id}"
+
+
+def extrair_deteccoes(result):
+    """Extrai todas as deteccoes do YOLO antes de aplicar filtros de decisao."""
+    detections = []
+
+    if result.boxes is None:
+        return detections
 
     for box in result.boxes:
         class_id = int(box.cls[0])
-        class_name = normalizar_classe(result.names[class_id])
+        class_name = str(obter_nome_classe(result.names, class_id))
+        normalized = normalizar_classe(class_name)
         confidence = float(box.conf[0])
+        detections.append(
+            {
+                "class_id": class_id,
+                "class_name": class_name,
+                "normalized": normalized,
+                "confidence": confidence,
+            }
+        )
+
+    return detections
+
+
+def formatar_deteccoes_resumo(detections):
+    """Gera resumo curto das deteccoes para log e CSV."""
+    if not detections:
+        return "NO_BOXES"
+    return ", ".join(f"{item['normalized']} {item['confidence']:.3f}" for item in detections)
+
+
+def log_diagnostico(log_file, message):
+    """Imprime e grava mensagens de diagnostico da observacao."""
+    print(message)
+    if log_file is not None:
+        log_file.write(f"{message}\n")
+        log_file.flush()
+
+
+def imprimir_diagnostico_amostra(sample_index, detections, debug=False, log_file=None):
+    """Imprime diagnostico das boxes antes e depois da normalizacao."""
+    log_diagnostico(log_file, f"[DIAG] Amostra {sample_index} | Quantidade de boxes: {len(detections)}")
+
+    if not detections:
+        log_diagnostico(log_file, "[DIAG] result.boxes vazio nesta amostra.")
+        return
+
+    log_diagnostico(log_file, f"[DIAG] Deteccoes no frame: {formatar_deteccoes_resumo(detections)}")
+    if debug:
+        for item in detections:
+            log_diagnostico(
+                log_file,
+                "Deteccao: "
+                f"class_id={item['class_id']} "
+                f"class_name={item['class_name']} "
+                f"normalized={item['normalized']} "
+                f"confidence={item['confidence']:.4f}"
+            )
+
+
+def analisar_resultado(result, detections=None, debug=False, log_file=None):
+    """Extrai maior confianca de child e adult/adultface acima do limiar."""
+    child_conf_max = 0.0
+    adult_conf_max = 0.0
+    detections = detections if detections is not None else extrair_deteccoes(result)
+
+    for detection in detections:
+        class_name = detection["normalized"]
+        confidence = detection["confidence"]
 
         if class_name in CHILD_CLASSES:
             if confidence >= MIN_CHILD_CONF:
                 child_conf_max = max(child_conf_max, confidence)
+            elif debug:
+                log_diagnostico(log_file, f"[DIAG] child ignorado por confianca baixa: {confidence:.4f} < {MIN_CHILD_CONF:.2f}")
         elif class_name in ADULT_CLASSES:
             if confidence >= MIN_ADULT_CONF:
                 adult_conf_max = max(adult_conf_max, confidence)
+            elif debug:
+                log_diagnostico(log_file, f"[DIAG] adult/adultface ignorado por confianca baixa: {confidence:.4f} < {MIN_ADULT_CONF:.2f}")
+        elif debug:
+            log_diagnostico(log_file, f"[DIAG] classe ignorada por nome nao mapeado: {detection['class_name']} -> {class_name}")
 
     child_detected = child_conf_max >= MIN_CHILD_CONF
     adult_detected = adult_conf_max >= MIN_ADULT_CONF
 
+    if debug:
+        log_diagnostico(
+            log_file,
+            "[DIAG] Resultado apos filtros | "
+            f"child_detected={child_detected} child_conf_max={child_conf_max:.4f} | "
+            f"adult_detected={adult_detected} adult_conf_max={adult_conf_max:.4f}"
+        )
+
     return child_detected, child_conf_max, adult_detected, adult_conf_max
 
 
-def obter_melhor_child_conf(result):
+def obter_melhor_child_conf(result, detections=None):
     """Retorna a maior confianca da classe child, mesmo antes da decisao final."""
     best_conf = 0.0
+    detections = detections if detections is not None else extrair_deteccoes(result)
 
-    for box in result.boxes:
-        class_id = int(box.cls[0])
-        class_name = normalizar_classe(result.names[class_id])
-        confidence = float(box.conf[0])
-
-        if class_name in CHILD_CLASSES:
-            best_conf = max(best_conf, confidence)
+    for detection in detections:
+        if detection["normalized"] in CHILD_CLASSES:
+            best_conf = max(best_conf, detection["confidence"])
 
     return best_conf
 
@@ -144,6 +226,9 @@ def preparar_csv():
         "child_conf_max",
         "adult_detected",
         "adult_conf_max",
+        "boxes_count",
+        "detections",
+        "raw_child_conf",
         "child_presence_ratio",
         "adult_presence_ratio",
         "partial_status",
@@ -151,6 +236,12 @@ def preparar_csv():
     writer = csv.DictWriter(file, fieldnames=fieldnames)
     writer.writeheader()
     return file, writer
+
+
+def preparar_debug_log():
+    """Cria arquivo de diagnostico detalhado da observacao."""
+    DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    return DEBUG_LOG_PATH.open("w", encoding="utf-8")
 
 
 def salvar_amostra(writer, sample, metrics, partial_status):
@@ -163,6 +254,9 @@ def salvar_amostra(writer, sample, metrics, partial_status):
             "child_conf_max": round(sample["child_conf_max"], 4),
             "adult_detected": sample["adult_detected"],
             "adult_conf_max": round(sample["adult_conf_max"], 4),
+            "boxes_count": sample["boxes_count"],
+            "detections": sample["detections"],
+            "raw_child_conf": round(sample["raw_child_conf"], 4),
             "child_presence_ratio": round(metrics["child_presence_ratio"], 4),
             "adult_presence_ratio": round(metrics["adult_presence_ratio"], 4),
             "partial_status": partial_status,
@@ -207,17 +301,28 @@ def desenhar_tela(frame, remaining_seconds, metrics, partial_status):
     return frame
 
 
-def executar_observacao(model, queue, duration, sample_interval, show_window=True):
+def executar_observacao(model, queue, duration, sample_interval, show_window=True, debug=False, yolo_conf=DIAGNOSTIC_YOLO_CONF):
     """Executa observacao por tempo limitado, amostrando a cada intervalo."""
     samples = []
     csv_file, csv_writer = preparar_csv()
+    debug_log_file = preparar_debug_log()
     best_child_frame = None
     best_child_conf = 0.0
 
     warmup_packet = queue.get()
     warmup_frame = warmup_packet.getCvFrame()
-    executar_inferencia(model, warmup_frame)
-    print("Warm-up do modelo concluido. Iniciando cronometro de observacao.")
+    executar_inferencia(model, warmup_frame, conf_threshold=yolo_conf)
+    log_diagnostico(debug_log_file, "Warm-up do modelo concluido. Iniciando cronometro de observacao.")
+    log_diagnostico(debug_log_file, f"Nomes de classes do modelo: {model.names}")
+    log_diagnostico(
+        debug_log_file,
+        "Parametros de observacao | "
+        f"yolo_conf={yolo_conf:.2f} | "
+        f"MIN_CHILD_CONF={MIN_CHILD_CONF:.2f} | "
+        f"MIN_ADULT_CONF={MIN_ADULT_CONF:.2f} | "
+        f"CHILD_MIN_PRESENCE={CHILD_MIN_PRESENCE:.2f} | "
+        f"ADULT_MAX_PRESENCE={ADULT_MAX_PRESENCE:.2f}"
+    )
 
     start_time = time.perf_counter()
     next_sample_time = start_time
@@ -226,7 +331,7 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
     partial_status = "OBSERVANDO"
     metrics = calcular_metricas(samples)
 
-    print("Modo de observacao iniciado. Pressione 'q' para encerrar antes do tempo.")
+    log_diagnostico(debug_log_file, "Modo de observacao iniciado. Pressione 'q' para encerrar antes do tempo.")
 
     try:
         while True:
@@ -242,9 +347,17 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
             last_frame = frame
 
             if now >= next_sample_time:
-                result = executar_inferencia(model, frame)
-                child_detected, child_conf_max, adult_detected, adult_conf_max = analisar_resultado(result)
-                raw_child_conf = obter_melhor_child_conf(result)
+                result = executar_inferencia(model, frame, conf_threshold=yolo_conf)
+                detections = extrair_deteccoes(result)
+                next_sample_number = sample_index + 1
+                imprimir_diagnostico_amostra(next_sample_number, detections, debug=debug, log_file=debug_log_file)
+                child_detected, child_conf_max, adult_detected, adult_conf_max = analisar_resultado(
+                    result,
+                    detections=detections,
+                    debug=debug,
+                    log_file=debug_log_file,
+                )
+                raw_child_conf = obter_melhor_child_conf(result, detections=detections)
 
                 # Guarda o frame mais forte de child para anexar ao alerta final.
                 if raw_child_conf > best_child_conf:
@@ -259,6 +372,9 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
                     "child_conf_max": child_conf_max,
                     "adult_detected": adult_detected,
                     "adult_conf_max": adult_conf_max,
+                    "boxes_count": len(detections),
+                    "detections": formatar_deteccoes_resumo(detections),
+                    "raw_child_conf": raw_child_conf,
                 }
                 samples.append(sample)
 
@@ -267,8 +383,12 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
                 salvar_amostra(csv_writer, sample, metrics, partial_status)
                 csv_file.flush()
 
-                print(
+                log_diagnostico(
+                    debug_log_file,
                     f"Amostra {sample_index} | "
+                    f"boxes={len(detections)} | "
+                    f"detections=[{formatar_deteccoes_resumo(detections)}] | "
+                    f"raw_child_conf={raw_child_conf:.3f} | "
                     f"child={child_detected} conf={child_conf_max:.3f} | "
                     f"adult={adult_detected} conf={adult_conf_max:.3f} | "
                     f"child_presence={metrics['child_presence_ratio']:.2%} | "
@@ -288,6 +408,7 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
                 break
     finally:
         csv_file.close()
+        debug_log_file.close()
         if show_window:
             cv2.destroyAllWindows()
 
@@ -318,6 +439,7 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
     print(f"alert_image_path: {alert_image_path}")
     print(f"CSV salvo em: {REPORT_PATH}")
     print(f"Resumo salvo em: {SUMMARY_PATH}")
+    print(f"Diagnostico salvo em: {DEBUG_LOG_PATH}")
 
     return last_frame, metrics, final_decision
 
@@ -328,12 +450,16 @@ def main():
     parser.add_argument("--duration", type=float, default=OBSERVATION_SECONDS, help="Duracao da observacao em segundos.")
     parser.add_argument("--sample-interval", type=float, default=SAMPLE_INTERVAL, help="Intervalo entre amostras em segundos.")
     parser.add_argument("--no-display", action="store_true", help="Executa sem abrir janela OpenCV, ideal para Flask/headless.")
+    parser.add_argument("--debug-detections", action="store_true", help="Imprime todas as deteccoes antes dos filtros.")
+    parser.add_argument("--yolo-conf", type=float, default=DIAGNOSTIC_YOLO_CONF, help=f"Limiar bruto do YOLO antes dos filtros. Padrao diagnostico: {DIAGNOSTIC_YOLO_CONF}. Padrao do teste YOLO: {CONF_THRESHOLD}.")
     args = parser.parse_args()
 
     if args.duration <= 0:
         raise ValueError("--duration deve ser maior que zero.")
     if args.sample_interval <= 0:
         raise ValueError("--sample-interval deve ser maior que zero.")
+    if not 0.0 <= args.yolo_conf <= 1.0:
+        raise ValueError("--yolo-conf deve ficar entre 0.0 e 1.0.")
 
     if not listar_dispositivos():
         return
@@ -344,11 +470,27 @@ def main():
     if api_version == "v3":
         with pipeline:
             pipeline.start()
-            executar_observacao(model, queue_info, args.duration, args.sample_interval, show_window=not args.no_display)
+            executar_observacao(
+                model,
+                queue_info,
+                args.duration,
+                args.sample_interval,
+                show_window=not args.no_display,
+                debug=args.debug_detections,
+                yolo_conf=args.yolo_conf,
+            )
     else:
         with dai.Device(pipeline) as device:
             queue = device.getOutputQueue(name=queue_info, maxSize=4, blocking=False)
-            executar_observacao(model, queue, args.duration, args.sample_interval, show_window=not args.no_display)
+            executar_observacao(
+                model,
+                queue,
+                args.duration,
+                args.sample_interval,
+                show_window=not args.no_display,
+                debug=args.debug_detections,
+                yolo_conf=args.yolo_conf,
+            )
 
 
 if __name__ == "__main__":

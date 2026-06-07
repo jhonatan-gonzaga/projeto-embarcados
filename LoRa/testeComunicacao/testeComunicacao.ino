@@ -34,7 +34,7 @@ struct ResultadoRaspberry {
   bool internetOk;
   bool telegramSent;
   bool sendToLora;
-  unsigned long timestamp;
+  double timestamp;
 };
 
 void logLinha(const String& mensagem) {
@@ -148,7 +148,7 @@ bool extrairResultadoJson(const String& body, ResultadoRaspberry& resultado) {
   resultado.internetOk = doc["internet_ok"] | false;
   resultado.telegramSent = doc["telegram_sent"] | false;
   resultado.sendToLora = doc["send_to_lora"] | false;
-  resultado.timestamp = doc["timestamp"] | 0;
+  resultado.timestamp = doc["timestamp"] | 0.0;
   return resultado.finalDecision.length() > 0;
 }
 

@@ -81,12 +81,12 @@ def carregar_modelo(model_path):
     return YOLO(str(model_path), task="detect")
 
 
-def executar_inferencia(model, frame):
+def executar_inferencia(model, frame, conf_threshold=CONF_THRESHOLD):
     """Executa YOLOv8n OpenVINO com parametros fixos de baixa latencia."""
     return model(
         frame,
         imgsz=IMG_SIZE,
-        conf=CONF_THRESHOLD,
+        conf=conf_threshold,
         verbose=False,
     )[0]
 

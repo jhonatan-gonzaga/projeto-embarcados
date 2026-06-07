@@ -369,6 +369,7 @@ def check_car():
     try:
         duration = float(request.args.get("duration", DEFAULT_DURATION))
         sample_interval = float(request.args.get("sample_interval", DEFAULT_SAMPLE_INTERVAL))
+        yolo_conf = float(request.args.get("yolo_conf", 0.25))
     except ValueError:
         logger.warning("GET /check_car com argumentos invalidos: %s", request.query_string.decode())
         return jsonify({"status": "INVALID_ARGUMENTS"}), 400
@@ -376,8 +377,12 @@ def check_car():
     if duration <= 0 or sample_interval <= 0:
         logger.warning("GET /check_car com valores fora do intervalo: duration=%s sample_interval=%s", duration, sample_interval)
         return jsonify({"status": "INVALID_ARGUMENTS"}), 400
+    if not 0.0 <= yolo_conf <= 1.0:
+        logger.warning("GET /check_car com yolo_conf invalido: %s", yolo_conf)
+        return jsonify({"status": "INVALID_ARGUMENTS"}), 400
 
     model = request.args.get("model", str(DEFAULT_MODEL))
+    debug_detections = request.args.get("debug_detections", "false").strip().lower() in {"1", "true", "yes", "on"}
 
     with state_lock:
         if server_state == "RUNNING":
@@ -395,7 +400,11 @@ def check_car():
         "--sample-interval",
         str(sample_interval),
         "--no-display",
+        "--yolo-conf",
+        str(yolo_conf),
     ]
+    if debug_detections:
+        command.append("--debug-detections")
 
     thread = threading.Thread(
         target=executar_observacao_background,
@@ -404,7 +413,13 @@ def check_car():
     )
     thread.start()
 
-    logger.info("GET /check_car -> CHECK_STARTED duration=%.1f sample_interval=%.2f", duration, sample_interval)
+    logger.info(
+        "GET /check_car -> CHECK_STARTED duration=%.1f sample_interval=%.2f yolo_conf=%.2f debug=%s",
+        duration,
+        sample_interval,
+        yolo_conf,
+        debug_detections,
+    )
     return jsonify({"status": "CHECK_STARTED"})
 
 
