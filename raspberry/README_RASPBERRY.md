@@ -1,7 +1,7 @@
 # Implantacao Raspberry Pi
 
 Esta pasta contem apenas os arquivos necessarios para executar a OAK-D com o
-modelo YOLOv8n OpenVINO na Raspberry Pi. Os arquivos originais do projeto nao
+modelo YOLO11 OpenVINO na Raspberry Pi. Os arquivos originais do projeto nao
 foram movidos.
 
 ## Instalar
@@ -49,12 +49,28 @@ python oakd_camera_test.py
 
 Pressione `q` para encerrar.
 
-## Testar YOLO OpenVINO
+## Converter YOLO11 para OpenVINO
+
+Se `raspberry/yolo11.pt` ainda nao foi convertido, execute:
+
+```bash
+cd raspberry
+source venv/bin/activate
+python scripts/convert_yolo11_openvino.py
+```
+
+O modelo convertido fica em:
+
+```text
+raspberry/models/yolo11_openvino_model
+```
+
+## Testar YOLO11 OpenVINO
 
 ```bash
 cd raspberry/app
 source ../venv/bin/activate
-python oakd_yolo_test.py --model ../models/best_yolov8n_openvino_model
+python oakd_yolo_test.py --model ../models/yolo11_openvino_model
 ```
 
 O benchmark fica em:
@@ -102,7 +118,7 @@ Ou manualmente:
 ```bash
 cd raspberry/app
 source ../venv/bin/activate
-python oakd_observation_test.py --model ../models/best_yolov8n_openvino_model
+python oakd_observation_test.py --model ../models/yolo11_openvino_model
 ```
 
 Relatorios:
@@ -111,5 +127,3 @@ Relatorios:
 raspberry/results/reports/oakd_observation.csv
 raspberry/results/reports/oakd_observation_summary.txt
 ```
-
-

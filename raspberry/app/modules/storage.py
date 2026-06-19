@@ -8,7 +8,7 @@ APP_DIR = Path(__file__).resolve().parents[1]
 RESULTS_DIR = APP_DIR / "../results"
 SUMMARY_PATH = RESULTS_DIR / "reports/oakd_observation_summary.txt"
 LAST_ALERT_IMAGE_PATH = RESULTS_DIR / "images/last_child_alert.jpg"
-DEFAULT_MODEL = APP_DIR / "../models/best_yolov8n_openvino_model"
+DEFAULT_MODEL = APP_DIR / "../models/yolo11_openvino_model"
 DEFAULT_DURATION = 180
 DEFAULT_SAMPLE_INTERVAL = 1.0
 

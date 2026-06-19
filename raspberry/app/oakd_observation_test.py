@@ -1,7 +1,7 @@
 """
 Exemplo de uso:
 
-python oakd_observation_test.py --model models/best_yolov8n_openvino_model --duration 180 --sample-interval 1.0
+python oakd_observation_test.py --model ../models/yolo11_openvino_model --duration 180 --sample-interval 1.0
 
 Modo de observacao:
 - Mantem a OAK-D ligada por ate 3 minutos.
@@ -514,8 +514,8 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Modo de observacao OAK-D + YOLOv8n OpenVINO.")
-    parser.add_argument("--model", default="../models/best_yolov8n_openvino_model", help="Pasta do modelo OpenVINO.")
+    parser = argparse.ArgumentParser(description="Modo de observacao OAK-D + YOLO11 OpenVINO.")
+    parser.add_argument("--model", default="../models/yolo11_openvino_model", help="Pasta do modelo OpenVINO.")
     parser.add_argument("--duration", type=float, default=OBSERVATION_SECONDS, help="Duracao da observacao em segundos.")
     parser.add_argument("--sample-interval", type=float, default=SAMPLE_INTERVAL, help="Intervalo entre amostras em segundos.")
     parser.add_argument("--no-display", action="store_true", help="Executa sem abrir janela OpenCV, ideal para Flask/headless.")
