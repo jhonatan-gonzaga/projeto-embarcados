@@ -67,13 +67,30 @@ ensure_deps_hint() {
   local py
   py="$(python_bin)"
   if "$py" - <<'PY' >/dev/null 2>&1
-import depthai, cv2, ultralytics, openvino, flask
+import depthai, cv2, ultralytics, openvino, flask, requests
 PY
   then
     return 0
   fi
 
   echo "Dependencias Python nao encontradas no ambiente atual."
+  echo "Execute primeiro:"
+  echo "  cd raspberry"
+  echo "  ./scripts/install.sh"
+  return 1
+}
+
+ensure_telegram_deps_hint() {
+  local py
+  py="$(python_bin)"
+  if "$py" - <<'PY' >/dev/null 2>&1
+import requests
+PY
+  then
+    return 0
+  fi
+
+  echo "Dependencia Python 'requests' nao encontrada no ambiente atual."
   echo "Execute primeiro:"
   echo "  cd raspberry"
   echo "  ./scripts/install.sh"
@@ -263,6 +280,75 @@ show_status() {
   echo "Modelo selecionado: $(selected_model)"
 }
 
+test_telegram_notification() {
+  if ! ensure_telegram_deps_hint; then
+    return
+  fi
+
+  local default_image image_path temperature co2 bot_token chat_id
+  default_image="$RASPBERRY_DIR/results/images/last_child_alert.jpg"
+
+  read -r -p "Caminho da imagem [$default_image]: " image_path
+  read -r -p "Temperatura para teste [38.5]: " temperature
+  read -r -p "CO2 para teste [1200]: " co2
+
+  image_path="${image_path:-$default_image}"
+  temperature="${temperature:-38.5}"
+  co2="${co2:-1200}"
+
+  bot_token="${TELEGRAM_BOT_TOKEN:-}"
+  chat_id="${TELEGRAM_CHAT_ID:-}"
+
+  if [[ -z "$bot_token" ]]; then
+    read -r -p "Token do Bot Telegram: " bot_token
+  else
+    echo "Token do Bot Telegram: usando TELEGRAM_BOT_TOKEN do ambiente."
+  fi
+
+  if [[ -z "$chat_id" ]]; then
+    read -r -p "Chat ID Telegram: " chat_id
+  else
+    echo "Chat ID Telegram: usando TELEGRAM_CHAT_ID do ambiente."
+  fi
+
+  if [[ -z "$bot_token" || -z "$chat_id" ]]; then
+    echo "Token e Chat ID sao obrigatorios para testar o Telegram."
+    return
+  fi
+
+  if (
+    cd "$APP_DIR" || exit 1
+    IMAGE_PATH="$image_path" \
+    TEMPERATURE="$temperature" \
+    CO2="$co2" \
+    TELEGRAM_BOT_TOKEN="$bot_token" \
+    TELEGRAM_CHAT_ID="$chat_id" \
+    "$(python_bin)" - <<'PY'
+import logging
+import os
+
+from telegram_notifier import send_telegram_alert
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+sent = send_telegram_alert(
+    image_path=os.environ["IMAGE_PATH"],
+    temperature=os.environ["TEMPERATURE"],
+    co2=os.environ["CO2"],
+    bot_token=os.environ["TELEGRAM_BOT_TOKEN"],
+    chat_id=os.environ["TELEGRAM_CHAT_ID"],
+)
+
+print(f"telegram_sent={str(sent).lower()}")
+raise SystemExit(0 if sent else 1)
+PY
+  ); then
+    echo "Teste Telegram concluido com sucesso."
+  else
+    echo "Teste Telegram falhou. Verifique internet, token, chat_id e logs acima."
+  fi
+}
+
 show_menu() {
   clear 2>/dev/null || true
   echo "===== Menu $platform_name - OAK-D / YOLO / LoRa ====="
@@ -278,6 +364,7 @@ show_menu() {
   echo "7 - Sair"
   echo "8 - Rodar observacao rapida manual"
   echo "9 - Ver status do servidor/ultimo resultado"
+  echo "10 - Testar notificacao Telegram"
   echo
 }
 
@@ -297,6 +384,7 @@ main_menu() {
       7) echo "Saindo."; exit 0 ;;
       8) run_quick_observation ;;
       9) show_status ;;
+      10) test_telegram_notification ;;
       *) echo "Opcao invalida." ;;
     esac
     pause_menu
