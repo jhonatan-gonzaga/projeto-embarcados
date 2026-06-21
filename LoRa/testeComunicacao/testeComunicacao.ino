@@ -3,12 +3,12 @@
 #include <ArduinoJson.h>
 
 // Sketch de teste: usa duracao curta para validar o fluxo sem esperar 180 s.
-const char* ssid = "Pedro Arthur_2.4GHz";
-const char* password = "Pa29R11T10";
+const char* ssid = "Galaxy A10s7785";
+const char* password = "ventilador1";
 
-const char* checkCarUrl = "http://192.168.0.11:5000/check_car?duration=20&sample_interval=1.0&debug_detections=true&yolo_conf=0.05";
-const char* statusUrl = "http://192.168.0.11:5000/status";
-const char* resultUrl = "http://192.168.0.11:5000/last_result";
+const char* checkCarUrl = "http://10.112.100.249:5000/check_car?duration=10&sample_interval=1.0&debug_detections=true&yolo_conf=0.05";
+const char* statusUrl = "http://10.112.100.249:5000/status";
+const char* resultUrl = "http://10.112.100.249:5000/last_result";
 
 const int BOTAO_PIN = 0;
 const unsigned long WIFI_TIMEOUT_MS = 20000;
@@ -56,7 +56,7 @@ bool conectarWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.setAutoReconnect(true);
   WiFi.persistent(false);
-  WiFi.begin(ssid, password);
+ WiFi.begin(ssid, password);
 
   Serial.print("[WiFi] Conectando");
   unsigned long inicio = millis();

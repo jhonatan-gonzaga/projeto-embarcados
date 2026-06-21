@@ -2,9 +2,9 @@
 Exemplo de uso:
 
 python oakd_yolo_test.py
-python oakd_yolo_test.py --model models/best_yolov8n_openvino_model
+python oakd_yolo_test.py --model ../models/yolo11_openvino_model
 
-Captura frames RGB da OAK-D, roda YOLOv8n OpenVINO em tempo real e salva
+Captura frames RGB da OAK-D, roda YOLO11 OpenVINO em tempo real e salva
 benchmark em results/reports/oakd_benchmark.csv.
 """
 
@@ -18,7 +18,7 @@ import depthai as dai
 from ultralytics import YOLO
 
 
-MODEL_PATH = Path("../models/best_yolov8n_openvino_model")
+MODEL_PATH = Path("../models/yolo11_openvino_model")
 BENCHMARK_PATH = Path("../results/reports/oakd_benchmark.csv")
 
 PREVIEW_WIDTH = 640
@@ -73,7 +73,7 @@ def inicializar_camera():
 
 
 def carregar_modelo(model_path):
-    """Carrega o modelo OpenVINO exportado pelo Ultralytics."""
+    """Carrega um modelo YOLO compativel com Ultralytics."""
     model_path = Path(model_path)
     if not model_path.exists():
         raise FileNotFoundError(f"Modelo nao encontrado: {model_path}")
@@ -82,7 +82,7 @@ def carregar_modelo(model_path):
 
 
 def executar_inferencia(model, frame, conf_threshold=CONF_THRESHOLD):
-    """Executa YOLOv8n OpenVINO com parametros fixos de baixa latencia."""
+    """Executa YOLO com parametros fixos de baixa latencia."""
     return model(
         frame,
         imgsz=IMG_SIZE,
@@ -149,7 +149,7 @@ def salvar_benchmark(writer, camera_fps, inference_fps, result):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Teste OAK-D + YOLOv8n OpenVINO.")
+    parser = argparse.ArgumentParser(description="Teste OAK-D + YOLO11 OpenVINO.")
     parser.add_argument("--model", default=str(MODEL_PATH), help="Pasta do modelo OpenVINO.")
     args = parser.parse_args()
 
@@ -190,7 +190,7 @@ def main():
             )
 
             annotated = desenhar_resultados(frame, result, camera_fps, inference_fps)
-            cv2.imshow("OAK-D YOLOv8n OpenVINO", annotated)
+            cv2.imshow("OAK-D YOLO11 OpenVINO", annotated)
 
             if cv2.waitKey(1) & 0xFF == ord("q"):
                 break
