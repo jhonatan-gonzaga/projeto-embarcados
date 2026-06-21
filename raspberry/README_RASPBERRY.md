@@ -44,6 +44,18 @@ Opcoes principais:
 7 - Sair
 8 - Rodar observacao rapida manual
 9 - Ver status do servidor/ultimo resultado
+10 - Testar notificacao Telegram
+11 - Simular evento LoRa DHT22 -> Raspberry
+```
+
+No fluxo normal, use a opcao `5`. Ela liga o servidor Flask e aguarda a
+Heltec/LoRa enviar `POST /lora_event` com os dados DHT22.
+
+Para envio real via Telegram, configure antes de iniciar o servidor:
+
+```bash
+export TELEGRAM_BOT_TOKEN="seu_token"
+export TELEGRAM_CHAT_ID="seu_chat_id"
 ```
 
 ## Ativar Ambiente Virtual
@@ -136,6 +148,20 @@ curl "http://localhost:5000/check_car?duration=10&sample_interval=1.0"
 ```
 
 O endpoint executa `oakd_observation_test.py` e retorna o resumo final em JSON.
+
+## Testar Fluxo LoRa DHT22
+
+Com o servidor ligado, simule a Heltec enviando temperatura e umidade:
+
+```bash
+curl -X POST "http://localhost:5000/lora_event?duration=10&sample_interval=1.0" \
+  -H "Content-Type: application/json" \
+  -d '{"temperatura":32.5,"umidade":60.0}'
+```
+
+Esse endpoint salva os dados DHT22, inicia a observacao OAK-D/YOLO e, se o
+resultado final for `ALERT_CHILD_ALONE`, tenta enviar o Telegram com imagem,
+temperatura e umidade.
 
 ## Executar Observacao
 

@@ -4,9 +4,9 @@ Aplicacao principal Flask do sistema Raspberry Pi 5 + OAK-D.
 Responsabilidades:
 - receber acionamento de observacao;
 - executar observacao OAK-D/YOLO em background;
-- receber dados simulados de sensores;
+- receber dados DHT22 enviados pela LoRa/Heltec;
 - expor ultimo resultado e ultima imagem;
-- chamar mensagemTelegram(imagem, co2, temperatura, humidade) quando houver alerta.
+- chamar mensagemTelegram(imagem, temperatura, humidade) quando houver alerta.
 """
 
 import logging
@@ -51,7 +51,7 @@ def bool_arg(name, default=False):
 
 
 def processar_alerta_pos_observacao(result, summary):
-    """Chama o stub de Telegram apos uma observacao com alerta confirmado."""
+    """Chama o Telegram apos uma observacao com alerta confirmado."""
     if result.get("final_decision") != "ALERT_CHILD_ALONE":
         return result
 
@@ -60,7 +60,6 @@ def processar_alerta_pos_observacao(result, summary):
 
     telegram_sent = mensagemTelegram(
         str(image_path),
-        sensor_data.get("co2"),
         sensor_data.get("temperatura"),
         sensor_data.get("humidade"),
     )
@@ -77,7 +76,7 @@ def health():
 
 @app.post("/sensor_data")
 def receber_sensor_data():
-    """Recebe dados simulados de sensores enviados pela Heltec/ESP32."""
+    """Recebe dados DHT22 enviados pela Heltec/ESP32."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         logger.warning("POST /sensor_data com JSON ausente ou invalido.")
@@ -90,8 +89,7 @@ def receber_sensor_data():
         return jsonify({"status": "INVALID_DATA", "error": str(error)}), 400
 
     logger.info(
-        "POST /sensor_data -> co2=%.2f temperatura=%.2f humidade=%.2f",
-        sensor_data["co2"],
+        "POST /sensor_data -> temperatura=%.2f humidade=%.2f",
         sensor_data["temperatura"],
         sensor_data["humidade"],
     )
@@ -149,30 +147,29 @@ def get_image_info():
     return jsonify(info)
 
 
-@app.get("/check_car")
-def check_car():
-    """Inicia a observacao em background, ou informa BUSY se ja estiver rodando."""
+def iniciar_observacao_por_request():
+    """Inicia a observacao usando argumentos da query string atual."""
     try:
         duration = float(request.args.get("duration", DEFAULT_DURATION))
         sample_interval = float(request.args.get("sample_interval", DEFAULT_SAMPLE_INTERVAL))
         yolo_conf = float(request.args.get("yolo_conf", 0.25))
     except ValueError:
-        logger.warning("GET /check_car com argumentos invalidos: %s", request.query_string.decode())
+        logger.warning("Argumentos invalidos: %s", request.query_string.decode())
         return jsonify({"status": "INVALID_ARGUMENTS"}), 400
 
     if duration <= 0 or sample_interval <= 0:
         logger.warning(
-            "GET /check_car com valores fora do intervalo: duration=%s sample_interval=%s",
+            "Valores fora do intervalo: duration=%s sample_interval=%s",
             duration,
             sample_interval,
         )
         return jsonify({"status": "INVALID_ARGUMENTS"}), 400
     if not 0.0 <= yolo_conf <= 1.0:
-        logger.warning("GET /check_car com yolo_conf invalido: %s", yolo_conf)
+        logger.warning("yolo_conf invalido: %s", yolo_conf)
         return jsonify({"status": "INVALID_ARGUMENTS"}), 400
 
     if not set_running_if_idle():
-        logger.info("GET /check_car -> BUSY")
+        logger.info("Observacao nao iniciada -> BUSY")
         return jsonify({"status": "BUSY"})
 
     model = request.args.get("model", str(DEFAULT_MODEL))
@@ -193,13 +190,41 @@ def check_car():
     thread.start()
 
     logger.info(
-        "GET /check_car -> CHECK_STARTED duration=%.1f sample_interval=%.2f yolo_conf=%.2f debug=%s",
+        "Observacao iniciada duration=%.1f sample_interval=%.2f yolo_conf=%.2f debug=%s",
         duration,
         sample_interval,
         yolo_conf,
         debug_detections,
     )
     return jsonify({"status": "CHECK_STARTED"})
+
+
+@app.post("/lora_event")
+def receber_lora_event():
+    """Fluxo normal: LoRa envia DHT22 e a Raspberry inicia a observacao."""
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        logger.warning("POST /lora_event com JSON ausente ou invalido.")
+        return jsonify({"status": "INVALID_JSON"}), 400
+
+    try:
+        sensor_data = salvar_sensor_data(data)
+    except ValueError as error:
+        logger.warning("POST /lora_event invalido: %s", error)
+        return jsonify({"status": "INVALID_DATA", "error": str(error)}), 400
+
+    logger.info(
+        "POST /lora_event -> temperatura=%.2f humidade=%.2f; iniciando observacao",
+        sensor_data["temperatura"],
+        sensor_data["humidade"],
+    )
+    return iniciar_observacao_por_request()
+
+
+@app.get("/check_car")
+def check_car():
+    """Inicia a observacao em background, ou informa BUSY se ja estiver rodando."""
+    return iniciar_observacao_por_request()
 
 
 if __name__ == "__main__":

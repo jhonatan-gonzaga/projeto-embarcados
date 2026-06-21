@@ -159,6 +159,35 @@ check_lora() {
   esac
 }
 
+normal_lora_flow() {
+  echo "Fluxo normal: LoRa/Heltec -> Raspberry -> OAK-D/YOLO -> Telegram."
+  echo "A Raspberry ficara com o servidor ligado aguardando POST /lora_event"
+  echo "com JSON: {\"temperatura\": 32.5, \"umidade\": 60.0}"
+  echo
+  if [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_CHAT_ID:-}" ]]; then
+    echo "Aviso: TELEGRAM_BOT_TOKEN e/ou TELEGRAM_CHAT_ID nao estao configurados."
+    echo "Sem essas variaveis, o alerta sera detectado, mas telegram_sent ficara false."
+    echo
+  fi
+  run_server
+}
+
+send_lora_event_test() {
+  local temperature humidity url
+  read -r -p "Temperatura DHT22 [32.5]: " temperature
+  read -r -p "Umidade DHT22 [60.0]: " humidity
+  temperature="${temperature:-32.5}"
+  humidity="${humidity:-60.0}"
+  url="$SERVER_URL/lora_event?duration=10&sample_interval=1.0&yolo_conf=0.25&debug_detections=true"
+
+  echo "Enviando evento LoRa simulado para $url"
+  curl -fsS \
+    -H "Content-Type: application/json" \
+    -d "{\"temperatura\":$temperature,\"umidade\":$humidity}" \
+    "$url"
+  echo
+}
+
 test_camera_30s() {
   if ! ensure_deps_hint; then
     return
@@ -215,7 +244,7 @@ switch_model() {
 }
 
 default_mode() {
-  echo "Modo padrao: servidor ligado aguardando a LoRa chamar /check_car."
+  echo "Modo padrao: servidor ligado aguardando POST /lora_event da LoRa."
   run_server
 }
 
@@ -285,16 +314,16 @@ test_telegram_notification() {
     return
   fi
 
-  local default_image image_path temperature co2 bot_token chat_id
+  local default_image image_path temperature humidity bot_token chat_id
   default_image="$RASPBERRY_DIR/results/images/last_child_alert.jpg"
 
   read -r -p "Caminho da imagem [$default_image]: " image_path
   read -r -p "Temperatura para teste [38.5]: " temperature
-  read -r -p "CO2 para teste [1200]: " co2
+  read -r -p "Umidade para teste [72.5]: " humidity
 
   image_path="${image_path:-$default_image}"
   temperature="${temperature:-38.5}"
-  co2="${co2:-1200}"
+  humidity="${humidity:-72.5}"
 
   bot_token="${TELEGRAM_BOT_TOKEN:-}"
   chat_id="${TELEGRAM_CHAT_ID:-}"
@@ -320,7 +349,7 @@ test_telegram_notification() {
     cd "$APP_DIR" || exit 1
     IMAGE_PATH="$image_path" \
     TEMPERATURE="$temperature" \
-    CO2="$co2" \
+    HUMIDITY="$humidity" \
     TELEGRAM_BOT_TOKEN="$bot_token" \
     TELEGRAM_CHAT_ID="$chat_id" \
     "$(python_bin)" - <<'PY'
@@ -334,7 +363,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 sent = send_telegram_alert(
     image_path=os.environ["IMAGE_PATH"],
     temperature=os.environ["TEMPERATURE"],
-    co2=os.environ["CO2"],
+    humidity=os.environ["HUMIDITY"],
     bot_token=os.environ["TELEGRAM_BOT_TOKEN"],
     chat_id=os.environ["TELEGRAM_CHAT_ID"],
 )
@@ -365,6 +394,7 @@ show_menu() {
   echo "8 - Rodar observacao rapida manual"
   echo "9 - Ver status do servidor/ultimo resultado"
   echo "10 - Testar notificacao Telegram"
+  echo "11 - Simular evento LoRa DHT22 -> Raspberry"
   echo
 }
 
@@ -379,12 +409,13 @@ main_menu() {
       2) check_lora ;;
       3) test_camera_30s ;;
       4) switch_model ;;
-      5) default_mode ;;
+      5) normal_lora_flow ;;
       6) view_results_image ;;
       7) echo "Saindo."; exit 0 ;;
       8) run_quick_observation ;;
       9) show_status ;;
       10) test_telegram_notification ;;
+      11) send_lora_event_test ;;
       *) echo "Opcao invalida." ;;
     esac
     pause_menu

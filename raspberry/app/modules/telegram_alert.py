@@ -1,18 +1,27 @@
-"""Stub de alerta Telegram.
+"""Envio de alerta Telegram para o fluxo LoRa -> Raspberry -> Telegram."""
 
-Telegram real ainda nao e implementado aqui. Esta funcao existe para manter
-o contrato de integracao do projeto e facilitar a troca futura pela chamada
-real da API do Telegram.
-"""
+import logging
+import os
+
+from telegram_notifier import send_telegram_alert
 
 
-def mensagemTelegram(imagem, co2, temperatura, humidade):
-    """Stub do envio de alerta com imagem e dados ambientais."""
-    print("===== STUB mensagemTelegram =====")
-    print(f"Imagem: {imagem}")
-    print(f"CO2: {co2}")
-    print(f"Temperatura: {temperatura}")
-    print(f"Humidade: {humidade}")
-    print("Telegram real ainda nao implementado. Retornando False.")
-    print("=================================")
-    return False
+logger = logging.getLogger(__name__)
+
+
+def mensagemTelegram(imagem, temperatura, humidade):
+    """Envia alerta com imagem e dados DHT22 quando as credenciais existem."""
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+
+    if not bot_token or not chat_id:
+        logger.warning("Telegram nao enviado: configure TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID.")
+        return False
+
+    return send_telegram_alert(
+        image_path=imagem,
+        temperature=temperatura,
+        humidity=humidade,
+        bot_token=bot_token,
+        chat_id=chat_id,
+    )

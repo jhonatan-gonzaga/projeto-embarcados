@@ -5,3 +5,4 @@ openvino
 depthai
 flask
 requests
+requests

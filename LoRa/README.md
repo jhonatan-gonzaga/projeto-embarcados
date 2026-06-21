@@ -10,27 +10,37 @@
 Instale pelo Library Manager da IDE Arduino:
 
 * ArduinoJson
+* DHT sensor library ou DHTesp, dependendo do sketch usado
 
 As bibliotecas `WiFi` e `HTTPClient` ja fazem parte do core ESP32.
 
 ## Fluxo
 
-1. Usuario pressiona o botao PRG/BOOT.
-2. A Heltec envia `GET /check_car`.
-3. A Raspberry inicia a observacao OAK-D + YOLOv8 OpenVINO.
+1. A Heltec le o DHT22.
+2. A Heltec envia `POST /lora_event` com `temperatura` e `umidade`.
+3. A Raspberry salva os dados DHT22 e inicia a observacao OAK-D + YOLO OpenVINO.
 4. A Heltec consulta `GET /status` ate receber `FINISHED`.
-5. A Heltec consulta `GET /last_result` e interpreta o JSON com ArduinoJson.
-6. A Heltec toma a acao local com base em `final_decision`, `internet_ok`, `telegram_sent` e `send_to_lora`.
+5. Se a IA confirmar `ALERT_CHILD_ALONE`, a Raspberry envia Telegram com imagem, temperatura e umidade.
+6. A Heltec consulta `GET /last_result` e interpreta o JSON com ArduinoJson.
 
 ## Endpoints utilizados
 
 ```text
-GET /check_car
+POST /lora_event
 GET /status
 GET /last_result
 ```
 
-`GET /last_image` continua existindo na Raspberry, mas nao e usado pela Heltec. Ele fica reservado para Telegram, navegador e aplicativos futuros.
+`GET /check_car` continua existindo para testes manuais. `GET /last_image` continua existindo na Raspberry, mas nao e usado pela Heltec.
+
+Payload do fluxo normal:
+
+```json
+{
+  "temperatura": 32.5,
+  "umidade": 60.0
+}
+```
 
 ## Configuracao
 
@@ -40,9 +50,18 @@ Atualize nos sketches:
 const char* ssid = "...";
 const char* password = "...";
 
-const char* checkCarUrl = "http://192.168.0.11:5000/check_car";
+const char* loraEventUrl = "http://192.168.0.11:5000/lora_event";
 const char* statusUrl = "http://192.168.0.11:5000/status";
 const char* resultUrl = "http://192.168.0.11:5000/last_result";
+```
+
+Na Raspberry, configure o Telegram antes de iniciar o servidor:
+
+```bash
+export TELEGRAM_BOT_TOKEN="seu_token"
+export TELEGRAM_CHAT_ID="seu_chat_id"
+cd raspberry
+./menu_raspberry.sh
 ```
 
 ## Decisoes esperadas

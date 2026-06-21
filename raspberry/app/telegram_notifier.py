@@ -7,6 +7,7 @@ apos a IA confirmar uma crianca sozinha no veiculo.
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +37,7 @@ class TelegramNotifier:
         self,
         image_path: str | Path,
         temperature: float | int | str | None,
-        co2: float | int | str | None,
+        humidity: float | int | str | None,
     ) -> bool:
         """Envia foto com legenda Markdown e retorna True somente no sucesso."""
         if not self.bot_token or not self.chat_id:
@@ -51,7 +52,7 @@ class TelegramNotifier:
         url = TELEGRAM_SEND_PHOTO_URL.format(bot_token=self.bot_token)
         payload: dict[str, Any] = {
             "chat_id": self.chat_id,
-            "caption": self._build_caption(temperature, co2),
+            "caption": self._build_caption(temperature, humidity),
             "parse_mode": "Markdown",
         }
 
@@ -107,16 +108,16 @@ class TelegramNotifier:
     @staticmethod
     def _build_caption(
         temperature: float | int | str | None,
-        co2: float | int | str | None,
+        humidity: float | int | str | None,
     ) -> str:
         """Monta a legenda Markdown enviada junto da foto."""
         temperature_text = _format_sensor_value(temperature, suffix="C")
-        co2_text = _format_sensor_value(co2, suffix="ppm")
+        humidity_text = _format_sensor_value(humidity, suffix="%")
 
         return (
             "*ALERTA CRITICO: crianca detectada sozinha no veiculo!*\n\n"
             f"*Temperatura:* {temperature_text}\n"
-            f"*CO2:* {co2_text}\n\n"
+            f"*Umidade:* {humidity_text}\n\n"
             "Verifique o veiculo imediatamente."
         )
 
@@ -124,7 +125,7 @@ class TelegramNotifier:
 def send_telegram_alert(
     image_path: str | Path,
     temperature: float | int | str | None,
-    co2: float | int | str | None,
+    humidity: float | int | str | None,
     bot_token: str,
     chat_id: str | int,
     timeout: int | float = DEFAULT_TIMEOUT_SECONDS,
@@ -139,7 +140,7 @@ def send_telegram_alert(
     return notifier.send_alert_photo(
         image_path=image_path,
         temperature=temperature,
-        co2=co2,
+        humidity=humidity,
     )
 
 
@@ -155,32 +156,23 @@ def _format_sensor_value(value: float | int | str | None, suffix: str) -> str:
     return f"{numeric_value:.1f} {suffix}"
 
 if __name__ == "__main__":
-    # Configuração para imprimir os avisos no terminal durante o teste
+    # Configuracao para imprimir os avisos no terminal durante o teste.
     logging.basicConfig(level=logging.INFO)
 
-    # 1. Suas Credenciais
-    MEU_TOKEN = "COLE_SEU_TOKEN_AQUI"
-    MEU_CHAT_ID = "COLE_SEU_CHAT_ID_AQUI"
-    
-    # 2. Arquivo de Imagem
-    # Coloque uma foto real chamada "foto_teste.jpg" na mesma pasta deste script
-    IMAGEM_TESTE = "last_child_alert.jpg"
+    meu_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    meu_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+    imagem_teste = os.getenv("TELEGRAM_TEST_IMAGE", "../results/images/last_child_alert.jpg")
 
-    print("Iniciando teste de notificação...")
-    
-    # 3. Executando a função principal
+    print("Iniciando teste de notificacao...")
     sucesso = send_telegram_alert(
-        image_path=IMAGEM_TESTE,
+        image_path=imagem_teste,
         temperature=38.5,
-        co2=1200,
-        bot_token=MEU_TOKEN,
-        chat_id=MEU_CHAT_ID
+        humidity=72.5,
+        bot_token=meu_token,
+        chat_id=meu_chat_id,
     )
 
-    # 4. Validando o retorno (O coração da sua arquitetura)
     if sucesso:
-        print("\n✅ SUCESSO: O Flask salvaria telegram_sent = True")
-        print("A ESP32 não enviará SMS.")
+        print("\nSUCESSO: O Flask salvaria telegram_sent = True")
     else:
-        print("\n❌ FALHA: O Flask salvaria telegram_sent = False")
-        print("A ESP32 ativará o módulo GSM SIM800L.")
+        print("\nFALHA: O Flask salvaria telegram_sent = False")

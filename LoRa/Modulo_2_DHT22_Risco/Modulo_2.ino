@@ -21,7 +21,7 @@
 // --- Rede Wi-Fi e Servidor ---
 const char* WIFI_SSID           = "Pedro Arthur_2.4GHz";
 const char* WIFI_PASSWORD       = "Pa29R11T10";
-const char* ENDPOINT_SERVIDOR   = "http://192.168.0.11:5000/sensor_data";
+const char* ENDPOINT_SERVIDOR   = "http://192.168.0.11:5000/lora_event";
 
 // --- Tempos e Timeouts ---
 const unsigned long TIMEOUT_WIFI_MS = 20000;
@@ -89,7 +89,7 @@ void inicializarRede();
 void gerenciarCicloDeEstados();
 int classificarRiscoTermico(float temperatura, float humidade);
 void verificarRiscoContinuo();
-bool enviarDadosParaServidor(float co2, float temperatura, float umidade);
+bool enviarDadosParaServidor(float temperatura, float umidade);
 void taskLeituraDHT(void *pvParameters);
 void taskLeituraMQ9(void *pvParameters);
 
@@ -173,11 +173,7 @@ void verificarRiscoContinuo()
         Serial.println("🚨 EMERGÊNCIA CONFIRMADA: RISCO DETETADO HÁ 10 SEGUNDOS 🚨");
         Serial.println("=======================================================");
         
-        bool sucesso = enviarDadosParaServidor(
-            leiturasAtuais.monoxidoCarbono, 
-            leiturasAtuais.temperatura, 
-            leiturasAtuais.umidade
-        );
+        bool sucesso = enviarDadosParaServidor(leiturasAtuais.temperatura, leiturasAtuais.umidade);
 
         if(sucesso) {
             // Trava o sistema para não enviar 1000 JSONs seguidos enquanto o perigo existir
@@ -214,11 +210,7 @@ void gerenciarCicloDeEstados()
             // Só envia o pacote de rotina (histórico) se não houve emergência neste ciclo
             if(!estadoApp.emEmergencia) {
                 Serial.println("[REDE] Enviando pacote de rotina do ciclo concluído...");
-                enviarDadosParaServidor(
-                    leiturasAtuais.monoxidoCarbono, 
-                    leiturasAtuais.temperatura, 
-                    leiturasAtuais.umidade
-                );
+                enviarDadosParaServidor(leiturasAtuais.temperatura, leiturasAtuais.umidade);
             }
         }
     }
@@ -316,10 +308,11 @@ void inicializarRede() {
     }
 }
 
-bool enviarDadosParaServidor(float co2, float temperatura, float umidade) {
+bool enviarDadosParaServidor(float temperatura, float umidade) {
     if (WiFi.status() != WL_CONNECTED) return false;
     StaticJsonDocument<200> docJson;
-    docJson["co2"] = co2; docJson["temperatura"] = temperatura; docJson["humidade"] = umidade;
+    docJson["temperatura"] = temperatura;
+    docJson["umidade"] = umidade;
     String payload; serializeJson(docJson, payload);
 
     HTTPClient http; http.setTimeout(TIMEOUT_HTTP_MS);

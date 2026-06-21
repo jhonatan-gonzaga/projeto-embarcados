@@ -1,4 +1,4 @@
-"""Armazenamento em memoria dos dados simulados de sensores."""
+"""Armazenamento em memoria dos dados DHT22 enviados pela LoRa/Heltec."""
 
 import threading
 import time
@@ -20,14 +20,33 @@ def converter_sensor_float(data, key):
     return value
 
 
+def converter_sensor_float_opcional(data, *keys):
+    """Converte o primeiro campo numerico encontrado ou retorna None."""
+    for key in keys:
+        if key not in data:
+            continue
+        try:
+            return float(data[key])
+        except (TypeError, ValueError) as error:
+            raise ValueError(f"Campo invalido: {key}") from error
+    return None
+
+
 def salvar_sensor_data(data):
-    """Valida e salva o ultimo pacote de sensores em memoria."""
+    """Valida e salva o ultimo pacote DHT22 em memoria.
+
+    Aceita `temperatura` e `umidade` ou `humidade`.
+    """
     global _latest_sensor_data
 
+    humidade = converter_sensor_float_opcional(data, "humidade", "umidade", "humidity")
+    if humidade is None:
+        raise ValueError("Campo obrigatorio ausente: humidade/umidade")
+
     sensor_data = {
-        "co2": converter_sensor_float(data, "co2"),
         "temperatura": converter_sensor_float(data, "temperatura"),
-        "humidade": converter_sensor_float(data, "humidade"),
+        "humidade": humidade,
+        "umidade": humidade,
         "timestamp": time.time(),
     }
 

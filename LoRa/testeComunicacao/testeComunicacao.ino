@@ -2,11 +2,11 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
-// Sketch de teste: usa duracao curta para validar o fluxo sem esperar 180 s.
+// Sketch de teste: simula DHT22 e usa duracao curta para validar o fluxo.
 const char* ssid = "Galaxy A10s7785";
 const char* password = "ventilador1";
 
-const char* checkCarUrl = "http://10.112.100.249:5000/check_car?duration=10&sample_interval=1.0&debug_detections=true&yolo_conf=0.05";
+const char* loraEventUrl = "http://10.112.100.249:5000/lora_event?duration=10&sample_interval=1.0&debug_detections=true&yolo_conf=0.05";
 const char* statusUrl = "http://10.112.100.249:5000/status";
 const char* resultUrl = "http://10.112.100.249:5000/last_result";
 
@@ -101,6 +101,40 @@ HttpResponse httpGET(const char* url) {
   }
 
   Serial.print("[HTTP] GET ");
+  Serial.print(url);
+  Serial.print(" -> ");
+  Serial.println(resposta.statusCode);
+
+  http.end();
+  return resposta;
+}
+
+HttpResponse httpPOSTJson(const char* url, const String& json) {
+  HttpResponse resposta = {-1, "", false};
+
+  if (!conectarWiFi()) {
+    resposta.body = "ERRO_WIFI";
+    return resposta;
+  }
+
+  HTTPClient http;
+  http.setTimeout(HTTP_TIMEOUT_MS);
+
+  if (!http.begin(url)) {
+    resposta.body = "ERRO_HTTP_BEGIN";
+    return resposta;
+  }
+
+  http.addHeader("Content-Type", "application/json");
+  resposta.statusCode = http.POST(json);
+  if (resposta.statusCode > 0) {
+    resposta.body = http.getString();
+    resposta.ok = resposta.statusCode >= 200 && resposta.statusCode < 300;
+  } else {
+    resposta.body = http.errorToString(resposta.statusCode);
+  }
+
+  Serial.print("[HTTP] POST ");
   Serial.print(url);
   Serial.print(" -> ");
   Serial.println(resposta.statusCode);
@@ -239,11 +273,21 @@ bool aguardarResultado(ResultadoRaspberry& resultado) {
   return false;
 }
 
-bool enviarCheckCar(ResultadoRaspberry& resultado) {
-  logLinha("[RPI] Enviando /check_car...");
-  HttpResponse resposta = httpGET(checkCarUrl);
+bool enviarEventoLoRa(ResultadoRaspberry& resultado) {
+  StaticJsonDocument<160> doc;
+  doc["temperatura"] = 38.5;
+  doc["umidade"] = 72.5;
+
+  String json;
+  serializeJson(doc, json);
+
+  logLinha("[RPI] Enviando DHT22 simulado para /lora_event...");
+  Serial.print("[RPI] JSON: ");
+  Serial.println(json);
+
+  HttpResponse resposta = httpPOSTJson(loraEventUrl, json);
   if (!resposta.ok) {
-    Serial.print("[RPI] Falha em /check_car. HTTP=");
+    Serial.print("[RPI] Falha em /lora_event. HTTP=");
     Serial.println(resposta.statusCode);
     return false;
   }
@@ -253,7 +297,7 @@ bool enviarCheckCar(ResultadoRaspberry& resultado) {
     return false;
   }
 
-  Serial.print("[RPI] Resposta /check_car: ");
+  Serial.print("[RPI] Resposta /lora_event: ");
   Serial.println(status);
 
   if (status == "CHECK_STARTED" || status == "BUSY") {
@@ -268,10 +312,10 @@ void setup() {
   delay(1000);
   pinMode(BOTAO_PIN, INPUT_PULLUP);
 
-  Serial.println("===== Heltec LoRa 32 V2 - TESTE Controle Raspberry =====");
+  Serial.println("===== TESTE Fluxo LoRa -> Raspberry -> Telegram =====");
   conectarWiFi();
   logHeap("setup");
-  Serial.println("Pressione o botao PRG/BOOT para enviar CHECK_CAR de 10 segundos.");
+  Serial.println("Pressione o botao PRG/BOOT para enviar DHT22 simulado.");
 }
 
 void loop() {
@@ -283,7 +327,7 @@ void loop() {
       ultimoClique = agora;
 
       ResultadoRaspberry resultado;
-      if (enviarCheckCar(resultado)) {
+      if (enviarEventoLoRa(resultado)) {
         imprimirResultadoFinal(resultado);
       } else {
         logLinha("[ERRO] Nao foi possivel concluir o teste.");
