@@ -252,9 +252,9 @@ normal_lora_flow() {
 
 wait_lora_alert_flow() {
   echo "Fluxo de alerta real:"
-  echo "1. LoRa/Heltec envia POST /lora_event com temperatura e umidade."
+  echo "1. LoRa/Heltec envia o sinal de alerta com temperatura e umidade via POST /lora_event."
   echo "2. Raspberry verifica crianca sozinha com OAK-D/YOLO."
-  echo "3. Se confirmar ALERT_CHILD_ALONE, envia Telegram com imagem, temperatura e umidade."
+  echo "3. Se confirmar ALERT_CHILD_ALONE, envia Telegram com imagem e os dados DHT22 recebidos da LoRa."
   echo
   if ! ensure_telegram_config; then
     return
@@ -482,7 +482,7 @@ show_menu() {
   echo "8 - Rodar observacao rapida manual"
   echo "9 - Ver status do servidor/ultimo resultado"
   echo "10 - Testar notificacao Telegram"
-  echo "11 - Fluxo real: aguardar LoRa -> verificar -> Telegram"
+  echo "11 - Fluxo real: LoRa envia DHT22 -> verificar -> Telegram"
   echo "12 - Configurar Telegram"
   echo "13 - Simular evento LoRa DHT22 -> Raspberry"
   echo
