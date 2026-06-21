@@ -45,18 +45,20 @@ Opcoes principais:
 8 - Rodar observacao rapida manual
 9 - Ver status do servidor/ultimo resultado
 10 - Testar notificacao Telegram
-11 - Simular evento LoRa DHT22 -> Raspberry
+11 - Fluxo real: aguardar LoRa -> verificar -> Telegram
+12 - Configurar Telegram
+13 - Simular evento LoRa DHT22 -> Raspberry
 ```
 
 No fluxo normal, use a opcao `5`. Ela liga o servidor Flask e aguarda a
 Heltec/LoRa enviar `POST /lora_event` com os dados DHT22.
 
-Para envio real via Telegram, configure antes de iniciar o servidor:
+Para o fluxo real completo, use a opcao `11`. Ela garante a configuracao do
+Telegram, liga o servidor e aguarda a Heltec/LoRa enviar `POST /lora_event`.
+Quando o sinal chegar, a Raspberry verifica a OAK-D/YOLO e, se confirmar
+`ALERT_CHILD_ALONE`, envia Telegram com imagem, temperatura e umidade.
 
-```bash
-export TELEGRAM_BOT_TOKEN="seu_token"
-export TELEGRAM_CHAT_ID="seu_chat_id"
-```
+A configuracao do Telegram fica salva em `raspberry/.runtime/telegram_env`.
 
 ## Ativar Ambiente Virtual
 

@@ -7,6 +7,7 @@ RASPBERRY_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_DIR="$RASPBERRY_DIR/app"
 RUNTIME_DIR="$RASPBERRY_DIR/.runtime"
 MODEL_FILE="$RUNTIME_DIR/model_path"
+TELEGRAM_FILE="$RUNTIME_DIR/telegram_env"
 DEFAULT_MODEL_REL="../models/yolo11_openvino_model"
 SERVER_PORT="${SERVER_PORT:-5000}"
 SERVER_URL="${SERVER_URL:-http://127.0.0.1:${SERVER_PORT}}"
@@ -63,6 +64,71 @@ selected_model_for_app() {
   fi
 }
 
+load_telegram_env() {
+  if [[ -s "$TELEGRAM_FILE" ]]; then
+    # shellcheck disable=SC1090
+    source "$TELEGRAM_FILE"
+    export TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID
+  fi
+}
+
+telegram_configured() {
+  load_telegram_env
+  [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]
+}
+
+configure_telegram() {
+  local bot_token chat_id current_token current_chat
+  load_telegram_env
+  current_token="${TELEGRAM_BOT_TOKEN:-}"
+  current_chat="${TELEGRAM_CHAT_ID:-}"
+
+  echo "Configuracao Telegram"
+  if [[ -n "$current_token" ]]; then
+    echo "Token atual: configurado"
+  else
+    echo "Token atual: nao configurado"
+  fi
+  if [[ -n "$current_chat" ]]; then
+    echo "Chat ID atual: $current_chat"
+  else
+    echo "Chat ID atual: nao configurado"
+  fi
+  echo
+
+  read -r -p "Token do Bot Telegram [manter atual]: " bot_token
+  read -r -p "Chat ID Telegram [manter atual]: " chat_id
+
+  bot_token="${bot_token:-$current_token}"
+  chat_id="${chat_id:-$current_chat}"
+
+  if [[ -z "$bot_token" || -z "$chat_id" ]]; then
+    echo "Token e Chat ID sao obrigatorios."
+    return 1
+  fi
+
+  umask 077
+  {
+    printf 'TELEGRAM_BOT_TOKEN=%q\n' "$bot_token"
+    printf 'TELEGRAM_CHAT_ID=%q\n' "$chat_id"
+  } > "$TELEGRAM_FILE"
+
+  export TELEGRAM_BOT_TOKEN="$bot_token"
+  export TELEGRAM_CHAT_ID="$chat_id"
+  echo "Telegram configurado em $TELEGRAM_FILE"
+  echo "Se o servidor ja estiver ligado, reinicie para ele carregar a nova configuracao."
+}
+
+ensure_telegram_config() {
+  if telegram_configured; then
+    return 0
+  fi
+
+  echo "Telegram ainda nao configurado."
+  echo "A opcao precisa de TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID."
+  configure_telegram
+}
+
 ensure_deps_hint() {
   local py
   py="$(python_bin)"
@@ -109,9 +175,15 @@ run_server() {
   local py model
   py="$(python_bin)"
   model="$(selected_model_abs)"
+  load_telegram_env
 
   echo "Servidor Flask em: http://0.0.0.0:${SERVER_PORT}"
   echo "Modelo padrao: $model"
+  if telegram_configured; then
+    echo "Telegram: configurado"
+  else
+    echo "Telegram: nao configurado"
+  fi
   echo "Use Ctrl+C para encerrar."
   (
     cd "$APP_DIR" || exit 1
@@ -164,16 +236,46 @@ normal_lora_flow() {
   echo "A Raspberry ficara com o servidor ligado aguardando POST /lora_event"
   echo "com JSON: {\"temperatura\": 32.5, \"umidade\": 60.0}"
   echo
-  if [[ -z "${TELEGRAM_BOT_TOKEN:-}" || -z "${TELEGRAM_CHAT_ID:-}" ]]; then
+  load_telegram_env
+  if ! telegram_configured; then
     echo "Aviso: TELEGRAM_BOT_TOKEN e/ou TELEGRAM_CHAT_ID nao estao configurados."
     echo "Sem essas variaveis, o alerta sera detectado, mas telegram_sent ficara false."
     echo
+    read -r -p "Configurar Telegram agora? [S/n] " answer
+    case "$answer" in
+      n|N|nao|NAO) ;;
+      *) configure_telegram || return ;;
+    esac
+  fi
+  run_server
+}
+
+wait_lora_alert_flow() {
+  echo "Fluxo de alerta real:"
+  echo "1. LoRa/Heltec envia POST /lora_event com temperatura e umidade."
+  echo "2. Raspberry verifica crianca sozinha com OAK-D/YOLO."
+  echo "3. Se confirmar ALERT_CHILD_ALONE, envia Telegram com imagem, temperatura e umidade."
+  echo
+  if ! ensure_telegram_config; then
+    return
   fi
   run_server
 }
 
 send_lora_event_test() {
   local temperature humidity url
+  if ! ensure_telegram_config; then
+    return
+  fi
+  if server_is_up; then
+    echo "Servidor detectado em $SERVER_URL."
+    echo "Confira se ele foi iniciado depois da configuracao Telegram."
+  else
+    echo "Servidor nao respondeu em $SERVER_URL."
+    echo "Use a opcao 5 para ligar o fluxo normal antes de simular o evento."
+    return
+  fi
+
   read -r -p "Temperatura DHT22 [32.5]: " temperature
   read -r -p "Umidade DHT22 [60.0]: " humidity
   temperature="${temperature:-32.5}"
@@ -325,25 +427,11 @@ test_telegram_notification() {
   temperature="${temperature:-38.5}"
   humidity="${humidity:-72.5}"
 
-  bot_token="${TELEGRAM_BOT_TOKEN:-}"
-  chat_id="${TELEGRAM_CHAT_ID:-}"
-
-  if [[ -z "$bot_token" ]]; then
-    read -r -p "Token do Bot Telegram: " bot_token
-  else
-    echo "Token do Bot Telegram: usando TELEGRAM_BOT_TOKEN do ambiente."
-  fi
-
-  if [[ -z "$chat_id" ]]; then
-    read -r -p "Chat ID Telegram: " chat_id
-  else
-    echo "Chat ID Telegram: usando TELEGRAM_CHAT_ID do ambiente."
-  fi
-
-  if [[ -z "$bot_token" || -z "$chat_id" ]]; then
-    echo "Token e Chat ID sao obrigatorios para testar o Telegram."
+  if ! ensure_telegram_config; then
     return
   fi
+  bot_token="$TELEGRAM_BOT_TOKEN"
+  chat_id="$TELEGRAM_CHAT_ID"
 
   if (
     cd "$APP_DIR" || exit 1
@@ -394,7 +482,9 @@ show_menu() {
   echo "8 - Rodar observacao rapida manual"
   echo "9 - Ver status do servidor/ultimo resultado"
   echo "10 - Testar notificacao Telegram"
-  echo "11 - Simular evento LoRa DHT22 -> Raspberry"
+  echo "11 - Fluxo real: aguardar LoRa -> verificar -> Telegram"
+  echo "12 - Configurar Telegram"
+  echo "13 - Simular evento LoRa DHT22 -> Raspberry"
   echo
 }
 
@@ -415,7 +505,9 @@ main_menu() {
       8) run_quick_observation ;;
       9) show_status ;;
       10) test_telegram_notification ;;
-      11) send_lora_event_test ;;
+      11) wait_lora_alert_flow ;;
+      12) configure_telegram ;;
+      13) send_lora_event_test ;;
       *) echo "Opcao invalida." ;;
     esac
     pause_menu

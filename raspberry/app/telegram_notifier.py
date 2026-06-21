@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_SEND_PHOTO_URL = "https://api.telegram.org/bot{bot_token}/sendPhoto"
 DEFAULT_TIMEOUT_SECONDS = 15
+DEFAULT_BOT_TOKEN = "8603600730:AAGuxOCxPqUJdS5fAted2WJHH-rjWPFNT10"
+DEFAULT_CHAT_ID = "6728036525"
 
 
 class TelegramNotifier:
@@ -159,8 +161,8 @@ if __name__ == "__main__":
     # Configuracao para imprimir os avisos no terminal durante o teste.
     logging.basicConfig(level=logging.INFO)
 
-    meu_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    meu_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
+    meu_token = os.getenv("TELEGRAM_BOT_TOKEN", DEFAULT_BOT_TOKEN)
+    meu_chat_id = os.getenv("TELEGRAM_CHAT_ID", DEFAULT_CHAT_ID)
     imagem_teste = os.getenv("TELEGRAM_TEST_IMAGE", "../results/images/last_child_alert.jpg")
 
     print("Iniciando teste de notificacao...")
