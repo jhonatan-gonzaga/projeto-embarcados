@@ -1,7 +1,6 @@
 /* ==========================================================================
  * PROJETO: Sistema Embarcado de Monitoramento Veicular (ESP32 / LoRa32)
- * DESCRICAO: Versao focada apenas no DHT22.
- *            Verifica risco termico por temperatura/umidade, sem MQ-9.
+ * DESCRICAO: Versao focada apenas no DHT22 com Feedback Visual de Rede (LED).
  * ========================================================================== */
 
 #include <ArduinoJson.h>
@@ -17,21 +16,22 @@
  * ========================================================================== */
 
 // --- Rede Wi-Fi e Servidor ---
-const char* WIFI_SSID           = "Pedro Arthur_2.4GHz";
-const char* WIFI_PASSWORD       = "Pa29R11T10";
-const char* ENDPOINT_SERVIDOR   = "http://192.168.0.11:5000/sensor_data";
+const char* WIFI_SSID           = "MIRANDAS 2.4G";
+const char* WIFI_PASSWORD       = "Mirandas1281@";
+const char* ENDPOINT_SERVIDOR   = "http://192.168.1.67:5000/sensor_data"; // URL corrigida!
 
 // --- Tempos e Timeouts ---
-const unsigned long TIMEOUT_WIFI_MS   = 20000;
+const unsigned long TIMEOUT_WIFI_MS   = 30000;  // Aumentado para 30s
 const unsigned long TIMEOUT_HTTP_MS   = 10000;
 const unsigned long TEMPO_FASE_MS     = 300000; // 5 minutos por fase
 const unsigned long INTERVALO_LEITURA = 2000;   // 2 segundos entre leituras
 
 // --- Limites de seguranca e persistencia ---
-const int LEITURAS_PARA_ALARME = 5; // 5 leituras seguidas = cerca de 10 segundos
+const int LEITURAS_PARA_ALARME = 30; // 5 leituras seguidas = cerca de 10 segundos
 
 // --- Pinos de Hardware ---
 const int PINO_DHT   = 17;
+const int PINO_LED   = 25; // LED branco embutido na placa Heltec V2
 const int LORA_SS    = 18;
 const int LORA_RST   = 14;
 const int LORA_DIO0  = 26;
@@ -104,29 +104,12 @@ void loop()
  * LOGICA DE INTELIGENCIA ARTIFICIAL (Arvore de Decisao Extraida do Python)
  * ========================================================================== */
 
-// Retorna 1 para risco de hipertermia ou 0 para ambiente seguro.
 int classificarRiscoTermico(float temperatura, float umidade)
 {
-    // Cenario 1
-    if (temperatura > 26.45 && temperatura <= 26.75 && umidade <= 52.65) {
-        return 1;
-    }
-
-    // Cenario 2
-    if (temperatura > 26.75 && temperatura <= 27.65 && umidade > 43.10 && umidade <= 46.70) {
-        return 1;
-    }
-
-    // Cenario 3
-    if (temperatura > 27.65 && temperatura <= 28.45 && umidade <= 52.15) {
-        return 1;
-    }
-
-    // Regra de seguranca: acima de 29 C em carro fechado e sempre risco.
-    if (temperatura > 29.00) {
-        return 1;
-    }
-
+    if (temperatura > 26.45 && temperatura <= 26.75 && umidade <= 52.65) return 1;
+    if (temperatura > 26.75 && temperatura <= 27.65 && umidade > 43.10 && umidade <= 46.70) return 1;
+    if (temperatura > 27.65 && temperatura <= 28.45 && umidade <= 52.15) return 1;
+    if (temperatura > 29.00) return 1;
     return 0;
 }
 
@@ -136,14 +119,9 @@ int classificarRiscoTermico(float temperatura, float umidade)
 
 void verificarRiscoContinuo()
 {
-    if (!estadoApp.modoLeituraAtivo || estadoApp.emEmergencia) {
-        return;
-    }
+    if (!estadoApp.modoLeituraAtivo || estadoApp.emEmergencia) return;
 
-    bool riscoTermico = classificarRiscoTermico(
-        leiturasAtuais.temperatura,
-        leiturasAtuais.umidade
-    ) == 1;
+    bool riscoTermico = classificarRiscoTermico(leiturasAtuais.temperatura, leiturasAtuais.umidade) == 1;
 
     if (riscoTermico) {
         estadoApp.contadorPerigoTermico++;
@@ -157,11 +135,7 @@ void verificarRiscoContinuo()
         Serial.println("[ALERTA] EMERGENCIA CONFIRMADA: RISCO TERMICO DHT22");
         Serial.println("=======================================================");
 
-        bool sucesso = enviarDadosParaServidor(
-            leiturasAtuais.temperatura,
-            leiturasAtuais.umidade,
-            true
-        );
+        bool sucesso = enviarDadosParaServidor(leiturasAtuais.temperatura, leiturasAtuais.umidade, true);
 
         if (sucesso) {
             estadoApp.emEmergencia = true;
@@ -175,9 +149,7 @@ void verificarRiscoContinuo()
 
 void gerenciarCicloDeEstados()
 {
-    if (millis() - estadoApp.cronometroFase < TEMPO_FASE_MS) {
-        return;
-    }
+    if (millis() - estadoApp.cronometroFase < TEMPO_FASE_MS) return;
 
     estadoApp.cronometroFase = millis();
     estadoApp.modoLeituraAtivo = !estadoApp.modoLeituraAtivo;
@@ -187,25 +159,15 @@ void gerenciarCicloDeEstados()
         Serial.println("\n[CICLO] Fase 2: ACORDANDO! Iniciando leituras do DHT22...");
         estadoApp.emEmergencia = false;
         estadoApp.contadorPerigoTermico = 0;
-
         vTaskResume(taskHandleDHT);
     }
     else
     {
         Serial.println("\n[CICLO] Fase 1: HIBERNANDO. As leituras voltarao em 5 minutos...");
-
         if (!estadoApp.emEmergencia) {
-            bool riscoTermico = classificarRiscoTermico(
-                leiturasAtuais.temperatura,
-                leiturasAtuais.umidade
-            ) == 1;
-
+            bool riscoTermico = classificarRiscoTermico(leiturasAtuais.temperatura, leiturasAtuais.umidade) == 1;
             Serial.println("[REDE] Enviando pacote de rotina do ciclo concluido...");
-            enviarDadosParaServidor(
-                leiturasAtuais.temperatura,
-                leiturasAtuais.umidade,
-                riscoTermico
-            );
+            enviarDadosParaServidor(leiturasAtuais.temperatura, leiturasAtuais.umidade, riscoTermico);
         }
     }
 }
@@ -223,15 +185,10 @@ void taskLeituraDHT(void *pvParameters)
             if (!isnan(data.temperature) && !isnan(data.humidity)) {
                 leiturasAtuais.temperatura = data.temperature;
                 leiturasAtuais.umidade = data.humidity;
-
-                Serial.println(
-                    "[DHT22] Temp: " + String(data.temperature, 1) +
-                    " C | Umi: " + String(data.humidity, 1) + "%"
-                );
+                Serial.println("[DHT22] Temp: " + String(data.temperature, 1) + " C | Umi: " + String(data.humidity, 1) + "%");
             } else {
                 Serial.println("[DHT22] Falha ao ler temperatura/umidade.");
             }
-
             vTaskDelay(pdMS_TO_TICKS(INTERVALO_LEITURA));
         } else {
             vTaskSuspend(NULL);
@@ -245,8 +202,11 @@ void taskLeituraDHT(void *pvParameters)
 
 void inicializarHardware()
 {
-    LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
+    // Configura e garante que o LED comece apagado
+    pinMode(PINO_LED, OUTPUT);
+    digitalWrite(PINO_LED, LOW);
 
+    LoRa.setPins(LORA_SS, LORA_RST, LORA_DIO0);
     if (!LoRa.begin(FREQUENCIA_BR)) {
         Serial.println("[HARDWARE] AVISO: Radio LoRa nao detectado.");
     } else {
@@ -257,36 +217,38 @@ void inicializarHardware()
 void inicializarSensores()
 {
     dhtSensor.setup(PINO_DHT, DHTesp::DHT22);
-
-    xTaskCreatePinnedToCore(
-        taskLeituraDHT,
-        "Task_DHT",
-        10000,
-        NULL,
-        4,
-        &taskHandleDHT,
-        NUCLEO_1
-    );
+    xTaskCreatePinnedToCore(taskLeituraDHT, "Task_DHT", 10000, NULL, 4, &taskHandleDHT, NUCLEO_1);
 }
 
 void inicializarRede()
 {
     Serial.println("[REDE] Conectando ao Wi-Fi...");
 
+    WiFi.disconnect(true); 
+    delay(1000); // Pausa de estabilidade
     WiFi.mode(WIFI_STA);
-    WiFi.setTxPower(WIFI_POWER_8_5dBm);
+    delay(1000); // Pausa de estabilidade
+
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
     unsigned long inicio = millis();
+    bool ledEstado = false;
+
+    // Pisca o LED enquanto tenta conectar
     while (WiFi.status() != WL_CONNECTED && millis() - inicio < TIMEOUT_WIFI_MS) {
+        ledEstado = !ledEstado;
+        digitalWrite(PINO_LED, ledEstado ? HIGH : LOW);
         delay(500);
         Serial.print(".");
     }
 
+    // Verifica o resultado final
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\n[REDE] Conectado!");
+        Serial.println("\n[REDE] Conectado com sucesso!");
+        digitalWrite(PINO_LED, HIGH); // ACENDE FIXO PARA INDICAR SUCESSO
     } else {
         Serial.println("\n[REDE] Falha ao conectar (Timeout).");
+        digitalWrite(PINO_LED, LOW); // APAGA PARA INDICAR FALHA
     }
 }
 
