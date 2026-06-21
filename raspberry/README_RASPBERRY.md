@@ -15,6 +15,37 @@ chmod +x scripts/*.sh
 
 O script cria `venv/` dentro de `raspberry/` e instala `app/requirements.txt`.
 
+## Menu de Execucao
+
+No Manjaro:
+
+```bash
+cd raspberry
+./menu_manjaro.sh
+```
+
+Na Raspberry Pi:
+
+```bash
+cd raspberry
+./menu_raspberry.sh
+```
+
+Opcoes principais:
+
+```text
+0 - Ligar servidor
+1 - Verificar conexao com OAK-D
+2 - Verificar conexao com LoRa/sensores
+3 - Testar somente a camera por 30 segundos
+4 - Trocar modelo YOLO
+5 - Modo padrao: aguardar LoRa enviar sinal
+6 - Ver imagem do results
+7 - Sair
+8 - Rodar observacao rapida manual
+9 - Ver status do servidor/ultimo resultado
+```
+
 ## Ativar Ambiente Virtual
 
 ```bash

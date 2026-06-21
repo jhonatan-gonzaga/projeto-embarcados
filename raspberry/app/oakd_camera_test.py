@@ -7,6 +7,7 @@ Abre a camera RGB da OAK-D em 640x480 a 30 FPS e mostra o FPS real.
 Pressione q para encerrar.
 """
 
+import argparse
 import time
 
 import cv2
@@ -57,14 +58,28 @@ def calcular_fps_camera(last_time, frame_counter):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Teste da camera RGB da OAK-D.")
+    parser.add_argument("--duration", type=float, default=0.0, help="Duracao do teste em segundos. Use 0 para rodar ate apertar q.")
+    parser.add_argument("--no-display", action="store_true", help="Executa sem abrir janela OpenCV.")
+    args = parser.parse_args()
+
+    if args.duration < 0:
+        raise ValueError("--duration nao pode ser negativo.")
+
     api_version, device, pipeline, queue_info = inicializar_camera()
 
     def loop(queue):
         camera_fps = 0.0
         frame_counter = 0
         last_time = time.perf_counter()
+        start_time = time.perf_counter()
 
-        print("Camera OAK-D iniciada. Pressione 'q' para encerrar.")
+        if args.duration > 0:
+            print(f"Camera OAK-D iniciada por {args.duration:.0f}s.")
+        elif args.no_display:
+            print("Camera OAK-D iniciada. Pressione Ctrl+C para encerrar.")
+        else:
+            print("Camera OAK-D iniciada. Pressione 'q' para encerrar.")
 
         while True:
             packet = queue.get()
@@ -74,11 +89,15 @@ def main():
             fps_update, last_time, frame_counter = calcular_fps_camera(last_time, frame_counter)
             if fps_update is not None:
                 camera_fps = fps_update
+                print(f"Camera FPS: {camera_fps:.2f}")
 
-            cv2.putText(frame, f"Camera FPS: {camera_fps:.2f}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-            cv2.imshow("OAK-D RGB", frame)
+            if not args.no_display:
+                cv2.putText(frame, f"Camera FPS: {camera_fps:.2f}", (20, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+                cv2.imshow("OAK-D RGB", frame)
 
-            if cv2.waitKey(1) & 0xFF == ord("q"):
+            if args.duration > 0 and time.perf_counter() - start_time >= args.duration:
+                break
+            if not args.no_display and cv2.waitKey(1) & 0xFF == ord("q"):
                 break
 
     if api_version == "v3":
@@ -90,7 +109,8 @@ def main():
             queue = device.getOutputQueue(name=queue_info, maxSize=4, blocking=False)
             loop(queue)
 
-    cv2.destroyAllWindows()
+    if not args.no_display:
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
