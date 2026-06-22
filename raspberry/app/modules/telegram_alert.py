@@ -18,10 +18,18 @@ def mensagemTelegram(imagem, temperatura, humidade):
         logger.warning("Telegram nao enviado: configure TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID.")
         return False
 
-    return send_telegram_alert(
+    logger.info(
+        "Tentando enviar Telegram com imagem=%s temperatura=%s humidade=%s",
+        imagem,
+        temperatura,
+        humidade,
+    )
+    sent = send_telegram_alert(
         image_path=imagem,
         temperature=temperatura,
         humidity=humidade,
         bot_token=bot_token,
         chat_id=chat_id,
     )
+    logger.info("Telegram enviado: %s", sent)
+    return sent

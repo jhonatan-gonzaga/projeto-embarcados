@@ -57,13 +57,28 @@ def processar_alerta_pos_observacao(result, summary):
 
     sensor_data = obter_latest_sensor_data() or {}
     image_path = obter_caminho_imagem_alerta(summary)
+    temperatura = sensor_data.get("temperatura")
+    humidade = sensor_data.get("humidade")
+
+    result["telegram_image_path"] = str(image_path)
+    result["telegram_temperature"] = temperatura
+    result["telegram_humidity"] = humidade
+    result["telegram_attempted"] = True
+
+    logger.info(
+        "Enviando Telegram: image=%s temperatura=%s humidade=%s",
+        image_path,
+        temperatura,
+        humidade,
+    )
 
     telegram_sent = mensagemTelegram(
         str(image_path),
-        sensor_data.get("temperatura"),
-        sensor_data.get("humidade"),
+        temperatura,
+        humidade,
     )
     result["telegram_sent"] = bool(telegram_sent)
+    logger.info("Resultado Telegram: sent=%s", result["telegram_sent"])
     return result
 
 

@@ -9,6 +9,8 @@ RUNTIME_DIR="$RASPBERRY_DIR/.runtime"
 MODEL_FILE="$RUNTIME_DIR/model_path"
 TELEGRAM_FILE="$RUNTIME_DIR/telegram_env"
 DEFAULT_MODEL_REL="../models/yolo11_openvino_model"
+DEFAULT_TELEGRAM_BOT_TOKEN="8603600730:AAGuxOCxPqUJdS5fAted2WJHH-rjWPFNT10"
+DEFAULT_TELEGRAM_CHAT_ID="6728036525"
 SERVER_PORT="${SERVER_PORT:-5000}"
 SERVER_URL="${SERVER_URL:-http://127.0.0.1:${SERVER_PORT}}"
 
@@ -74,6 +76,12 @@ load_telegram_env() {
 
 telegram_configured() {
   load_telegram_env
+  if [[ -z "${TELEGRAM_BOT_TOKEN:-}" ]]; then
+    export TELEGRAM_BOT_TOKEN="$DEFAULT_TELEGRAM_BOT_TOKEN"
+  fi
+  if [[ -z "${TELEGRAM_CHAT_ID:-}" ]]; then
+    export TELEGRAM_CHAT_ID="$DEFAULT_TELEGRAM_CHAT_ID"
+  fi
   [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_CHAT_ID:-}" ]]
 }
 
@@ -87,12 +95,12 @@ configure_telegram() {
   if [[ -n "$current_token" ]]; then
     echo "Token atual: configurado"
   else
-    echo "Token atual: nao configurado"
+    echo "Token atual: usando padrao do codigo"
   fi
   if [[ -n "$current_chat" ]]; then
     echo "Chat ID atual: $current_chat"
   else
-    echo "Chat ID atual: nao configurado"
+    echo "Chat ID atual: usando padrao do codigo"
   fi
   echo
 
@@ -256,9 +264,7 @@ wait_lora_alert_flow() {
   echo "2. Raspberry verifica crianca sozinha com OAK-D/YOLO."
   echo "3. Se confirmar ALERT_CHILD_ALONE, envia Telegram com imagem e os dados DHT22 recebidos da LoRa."
   echo
-  if ! ensure_telegram_config; then
-    return
-  fi
+  telegram_configured
   run_server
 }
 
