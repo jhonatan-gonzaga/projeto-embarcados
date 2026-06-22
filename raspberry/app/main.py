@@ -31,7 +31,7 @@ from modules.storage import (
     montar_image_info,
     obter_caminho_imagem_alerta,
 )
-from modules.telegram_alert import mensagemTelegram
+from modules.telegram_alert import get_last_telegram_error, mensagemTelegram
 
 
 app = Flask(__name__)
@@ -78,6 +78,7 @@ def processar_alerta_pos_observacao(result, summary):
         humidade,
     )
     result["telegram_sent"] = bool(telegram_sent)
+    result["telegram_error"] = get_last_telegram_error()
     logger.info("Resultado Telegram: sent=%s", result["telegram_sent"])
     return result
 

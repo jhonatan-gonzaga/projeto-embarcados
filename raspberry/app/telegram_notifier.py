@@ -34,6 +34,13 @@ class TelegramNotifier:
         self.bot_token = str(bot_token).strip()
         self.chat_id = str(chat_id).strip()
         self.timeout = timeout
+        self.last_error: str | None = None
+
+    def _fail(self, message: str, *args: Any) -> bool:
+        """Registra o motivo da falha e retorna False."""
+        self.last_error = message % args if args else message
+        logger.warning(self.last_error)
+        return False
 
     def send_alert_photo(
         self,
@@ -43,13 +50,11 @@ class TelegramNotifier:
     ) -> bool:
         """Envia foto com legenda Markdown e retorna True somente no sucesso."""
         if not self.bot_token or not self.chat_id:
-            logger.warning("Telegram nao enviado: bot_token ou chat_id ausente.")
-            return False
+            return self._fail("Telegram nao enviado: bot_token ou chat_id ausente.")
 
         photo_path = Path(image_path)
         if not photo_path.is_file():
-            logger.warning("Telegram nao enviado: imagem nao encontrada em %s.", photo_path)
-            return False
+            return self._fail("Telegram nao enviado: imagem nao encontrada em %s.", photo_path)
 
         url = TELEGRAM_SEND_PHOTO_URL.format(bot_token=self.bot_token)
         payload: dict[str, Any] = {
@@ -74,35 +79,28 @@ class TelegramNotifier:
                     timeout=self.timeout,
                 )
         except requests.Timeout:
-            logger.warning("Telegram nao enviado: timeout apos %ss.", self.timeout)
-            return False
+            return self._fail("Telegram nao enviado: timeout apos %ss.", self.timeout)
         except requests.ConnectionError as error:
-            logger.warning("Telegram nao enviado: falha de conexao: %s", error)
-            return False
+            return self._fail("Telegram nao enviado: falha de conexao: %s", error)
         except requests.RequestException as error:
-            logger.warning("Telegram nao enviado: erro HTTP local: %s", error)
-            return False
+            return self._fail("Telegram nao enviado: erro HTTP local: %s", error)
         except OSError as error:
-            logger.warning("Telegram nao enviado: erro ao ler imagem: %s", error)
-            return False
+            return self._fail("Telegram nao enviado: erro ao ler imagem: %s", error)
 
         if response.status_code != requests.codes.ok:
-            logger.warning(
+            return self._fail(
                 "Telegram nao enviado: API retornou HTTP %s: %s",
                 response.status_code,
                 response.text[:300],
             )
-            return False
 
         try:
             response_body = response.json()
         except ValueError:
-            logger.warning("Telegram nao enviado: resposta HTTP 200 sem JSON valido.")
-            return False
+            return self._fail("Telegram nao enviado: resposta HTTP 200 sem JSON valido.")
 
         if response_body.get("ok") is not True:
-            logger.warning("Telegram nao enviado: API retornou ok=false: %s", response.text[:300])
-            return False
+            return self._fail("Telegram nao enviado: API retornou ok=false: %s", response.text[:300])
 
         logger.info("Telegram enviado com sucesso para chat_id=%s.", self.chat_id)
         return True
@@ -144,6 +142,24 @@ def send_telegram_alert(
         temperature=temperature,
         humidity=humidity,
     )
+
+
+def send_telegram_alert_result(
+    image_path: str | Path,
+    temperature: float | int | str | None,
+    humidity: float | int | str | None,
+    bot_token: str,
+    chat_id: str | int,
+    timeout: int | float = DEFAULT_TIMEOUT_SECONDS,
+) -> tuple[bool, str | None]:
+    """Envia alerta e retorna (sucesso, motivo_da_falha)."""
+    notifier = TelegramNotifier(bot_token=bot_token, chat_id=chat_id, timeout=timeout)
+    sent = notifier.send_alert_photo(
+        image_path=image_path,
+        temperature=temperature,
+        humidity=humidity,
+    )
+    return sent, notifier.last_error
 
 
 def _format_sensor_value(value: float | int | str | None, suffix: str) -> str:

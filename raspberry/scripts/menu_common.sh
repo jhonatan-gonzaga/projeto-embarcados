@@ -180,6 +180,12 @@ run_server() {
     return
   fi
 
+  if server_is_up; then
+    echo "Ja existe um servidor respondendo em $SERVER_URL."
+    echo "Encerre esse servidor antes de iniciar novamente, para carregar o codigo/configuracao atual."
+    return
+  fi
+
   local py model
   py="$(python_bin)"
   model="$(selected_model_abs)"
