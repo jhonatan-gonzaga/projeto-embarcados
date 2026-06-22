@@ -48,6 +48,7 @@ Opcoes principais:
 11 - Fluxo real: LoRa envia DHT22 -> verificar -> Telegram
 12 - Configurar Telegram
 13 - Simular evento LoRa DHT22 -> Raspberry
+14 - Descobrir chat_id do Telegram
 ```
 
 No fluxo normal, use a opcao `5`. Ela liga o servidor Flask e aguarda a
@@ -60,6 +61,9 @@ OAK-D/YOLO e, se confirmar `ALERT_CHILD_ALONE`, envia Telegram com a imagem e
 os dados DHT22 recebidos da LoRa.
 
 A configuracao do Telegram fica salva em `raspberry/.runtime/telegram_env`.
+Se o Telegram retornar `Bad Request: chat not found`, abra o bot no Telegram,
+envie `/start`, rode a opcao `14` para descobrir o `chat_id` correto e salve
+esse ID na opcao `12`.
 
 ## Ativar Ambiente Virtual
 

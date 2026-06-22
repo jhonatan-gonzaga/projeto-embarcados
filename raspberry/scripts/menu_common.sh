@@ -137,6 +137,20 @@ ensure_telegram_config() {
   configure_telegram
 }
 
+use_default_telegram_config() {
+  # Configura o Telegram da opcao 11 com os valores padrao do projeto.
+  umask 077
+  {
+    printf 'TELEGRAM_BOT_TOKEN=%q\n' "$DEFAULT_TELEGRAM_BOT_TOKEN"
+    printf 'TELEGRAM_CHAT_ID=%q\n' "$DEFAULT_TELEGRAM_CHAT_ID"
+  } > "$TELEGRAM_FILE"
+
+  export TELEGRAM_BOT_TOKEN="$DEFAULT_TELEGRAM_BOT_TOKEN"
+  export TELEGRAM_CHAT_ID="$DEFAULT_TELEGRAM_CHAT_ID"
+  echo "Telegram da opcao 11 configurado com os valores padrao do projeto."
+  echo "Chat ID: $TELEGRAM_CHAT_ID"
+}
+
 ensure_deps_hint() {
   local py
   py="$(python_bin)"
@@ -270,7 +284,7 @@ wait_lora_alert_flow() {
   echo "2. Raspberry verifica crianca sozinha com OAK-D/YOLO."
   echo "3. Se confirmar ALERT_CHILD_ALONE, envia Telegram com imagem e os dados DHT22 recebidos da LoRa."
   echo
-  telegram_configured
+  use_default_telegram_config
   run_server
 }
 
@@ -488,6 +502,42 @@ PY
   fi
 }
 
+list_telegram_chats() {
+  if ! ensure_telegram_deps_hint; then
+    return
+  fi
+  telegram_configured
+
+  echo "Para aparecer aqui, abra o bot no Telegram e envie /start antes."
+  echo "Se for grupo, adicione o bot ao grupo e envie uma mensagem no grupo."
+  echo
+
+  (
+    cd "$APP_DIR" || exit 1
+    TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
+    "$(python_bin)" - <<'PY'
+import os
+
+from telegram_notifier import listar_chats_recentes
+
+try:
+    chats = listar_chats_recentes(os.environ["TELEGRAM_BOT_TOKEN"])
+except Exception as error:
+    print(f"Falha ao consultar getUpdates: {error}")
+    raise SystemExit(1)
+
+if not chats:
+    print("Nenhum chat encontrado.")
+    print("Envie /start para o bot no Telegram e tente novamente.")
+    raise SystemExit(0)
+
+print("Chats encontrados:")
+for chat in chats:
+    print(f"- id={chat['id']} type={chat.get('type')} title={chat.get('title')}")
+PY
+  )
+}
+
 show_menu() {
   clear 2>/dev/null || true
   echo "===== Menu $platform_name - OAK-D / YOLO / LoRa ====="
@@ -507,6 +557,7 @@ show_menu() {
   echo "11 - Fluxo real: LoRa envia DHT22 -> verificar -> Telegram"
   echo "12 - Configurar Telegram"
   echo "13 - Simular evento LoRa DHT22 -> Raspberry"
+  echo "14 - Descobrir chat_id do Telegram"
   echo
 }
 
@@ -530,6 +581,7 @@ main_menu() {
       11) wait_lora_alert_flow ;;
       12) configure_telegram ;;
       13) send_lora_event_test ;;
+      14) list_telegram_chats ;;
       *) echo "Opcao invalida." ;;
     esac
     pause_menu

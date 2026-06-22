@@ -17,6 +17,7 @@ import requests
 logger = logging.getLogger(__name__)
 
 TELEGRAM_SEND_PHOTO_URL = "https://api.telegram.org/bot{bot_token}/sendPhoto"
+TELEGRAM_GET_UPDATES_URL = "https://api.telegram.org/bot{bot_token}/getUpdates"
 DEFAULT_TIMEOUT_SECONDS = 15
 DEFAULT_BOT_TOKEN = "8603600730:AAGuxOCxPqUJdS5fAted2WJHH-rjWPFNT10"
 DEFAULT_CHAT_ID = "6728036525"
@@ -172,6 +173,33 @@ def _format_sensor_value(value: float | int | str | None, suffix: str) -> str:
         return f"{value} {suffix}"
 
     return f"{numeric_value:.1f} {suffix}"
+
+
+def listar_chats_recentes(
+    bot_token: str,
+    timeout: int | float = DEFAULT_TIMEOUT_SECONDS,
+) -> list[dict[str, Any]]:
+    """Lista chats recentes vistos pelo bot via getUpdates."""
+    url = TELEGRAM_GET_UPDATES_URL.format(bot_token=str(bot_token).strip())
+    response = requests.get(url, timeout=timeout)
+    response.raise_for_status()
+    body = response.json()
+    if body.get("ok") is not True:
+        raise RuntimeError(f"Telegram getUpdates retornou ok=false: {response.text[:300]}")
+
+    chats: dict[str, dict[str, Any]] = {}
+    for update in body.get("result", []):
+        message = update.get("message") or update.get("edited_message") or update.get("channel_post") or {}
+        chat = message.get("chat")
+        if not chat:
+            continue
+        chat_id = str(chat.get("id"))
+        chats[chat_id] = {
+            "id": chat.get("id"),
+            "type": chat.get("type"),
+            "title": chat.get("title") or chat.get("username") or chat.get("first_name"),
+        }
+    return list(chats.values())
 
 if __name__ == "__main__":
     # Configuracao para imprimir os avisos no terminal durante o teste.
