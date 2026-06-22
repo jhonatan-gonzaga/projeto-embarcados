@@ -439,6 +439,16 @@ test_telegram_notification() {
   temperature="${temperature:-38.5}"
   humidity="${humidity:-72.5}"
 
+  if server_is_up; then
+    echo "Servidor detectado. Testando Telegram pelo Flask em /test_telegram..."
+    curl -fsS \
+      -H "Content-Type: application/json" \
+      -d "{\"temperatura\":$temperature,\"umidade\":$humidity}" \
+      "$SERVER_URL/test_telegram"
+    echo
+    return
+  fi
+
   if ! ensure_telegram_config; then
     return
   fi

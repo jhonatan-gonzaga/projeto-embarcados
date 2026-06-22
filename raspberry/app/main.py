@@ -170,6 +170,51 @@ def get_image_info():
     return jsonify(info)
 
 
+@app.post("/test_telegram")
+def test_telegram():
+    """Testa o envio Telegram usando a imagem atual e dados DHT22."""
+    data = request.get_json(silent=True)
+    if data is not None and not isinstance(data, dict):
+        logger.warning("POST /test_telegram com JSON invalido.")
+        return jsonify({"status": "INVALID_JSON"}), 400
+
+    sensor_data = obter_latest_sensor_data() or {}
+    temperatura = (data or {}).get("temperatura", sensor_data.get("temperatura"))
+    humidade = (data or {}).get("humidade", (data or {}).get("umidade", sensor_data.get("humidade")))
+    image_path = obter_caminho_imagem_alerta()
+    image_exists = image_path.exists() and image_path.stat().st_size > 0
+
+    if not image_exists:
+        error = f"Imagem do alerta nao encontrada ou vazia: {image_path}"
+        logger.warning(error)
+        return jsonify(
+            {
+                "status": "NO_IMAGE",
+                "telegram_sent": False,
+                "telegram_error": error,
+                "telegram_image_path": str(image_path),
+                "telegram_image_exists": False,
+                "telegram_temperature": temperatura,
+                "telegram_humidity": humidade,
+            }
+        ), 404
+
+    sent = mensagemTelegram(str(image_path), temperatura, humidade)
+    error = get_last_telegram_error()
+    logger.info("POST /test_telegram -> sent=%s error=%s", sent, error)
+    return jsonify(
+        {
+            "status": "OK" if sent else "TELEGRAM_FAILED",
+            "telegram_sent": bool(sent),
+            "telegram_error": error,
+            "telegram_image_path": str(image_path),
+            "telegram_image_exists": True,
+            "telegram_temperature": temperatura,
+            "telegram_humidity": humidade,
+        }
+    )
+
+
 def iniciar_observacao_por_request():
     """Inicia a observacao usando argumentos da query string atual."""
     try:
