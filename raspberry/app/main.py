@@ -61,9 +61,16 @@ def processar_alerta_pos_observacao(result, summary):
     humidade = sensor_data.get("humidade")
 
     result["telegram_image_path"] = str(image_path)
+    result["telegram_image_exists"] = image_path.exists() and image_path.stat().st_size > 0
     result["telegram_temperature"] = temperatura
     result["telegram_humidity"] = humidade
     result["telegram_attempted"] = True
+
+    if not result["telegram_image_exists"]:
+        result["telegram_sent"] = False
+        result["telegram_error"] = f"Imagem do alerta nao encontrada ou vazia: {image_path}"
+        logger.warning(result["telegram_error"])
+        return result
 
     logger.info(
         "Enviando Telegram: image=%s temperatura=%s humidade=%s",

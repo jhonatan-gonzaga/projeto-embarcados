@@ -356,8 +356,7 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
     best_child_timestamp = 0.0
 
     if save_best_frame and LAST_ALERT_IMAGE_PATH.exists():
-        LAST_ALERT_IMAGE_PATH.unlink()
-        log_diagnostico(debug_log_file, f"Imagem anterior removida: {LAST_ALERT_IMAGE_PATH}")
+        log_diagnostico(debug_log_file, f"Imagem anterior preservada ate uma nova ser salva: {LAST_ALERT_IMAGE_PATH}")
 
     warmup_packet = queue.get()
     warmup_frame = warmup_packet.getCvFrame()
@@ -490,6 +489,11 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
             log_diagnostico(debug_log_file, f"Falha ao salvar frame do alerta: {error}")
     elif save_best_frame:
         log_diagnostico(debug_log_file, "Nenhuma deteccao child encontrada; melhor frame nao foi salvo.")
+
+    if save_best_frame and not alert_image_path and LAST_ALERT_IMAGE_PATH.exists():
+        alert_image_path = str(LAST_ALERT_IMAGE_PATH)
+        log_diagnostico(debug_log_file, "Usando imagem anterior preservada:")
+        log_diagnostico(debug_log_file, alert_image_path)
 
     salvar_resumo(metrics, final_decision, best_child_conf, alert_image_path, best_child_timestamp)
 
