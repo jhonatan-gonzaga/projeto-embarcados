@@ -3,11 +3,11 @@
 #include <ArduinoJson.h>
 
 // Teste isolado de comunicacao ESP32 -> Flask.
-// Nao usa sensores reais: os valores enviados sao simulados.
+// Envia somente os dados DHT22 simulados: temperatura e umidade.
 const char* ssid = "Pedro Arthur_2.4GHz";
 const char* password = "Pa29R11T10";
 
-const char* sensorDataUrl = "http://192.168.0.11:5000/sensor_data";
+const char* loraEventUrl = "http://192.168.0.11:5000/lora_event?duration=10&sample_interval=1.0";
 
 const unsigned long WIFI_TIMEOUT_MS = 20000;
 const unsigned long HTTP_TIMEOUT_MS = 10000;
@@ -42,16 +42,15 @@ bool conectarWiFi() {
   return false;
 }
 
-bool enviarSensorData(float co2, float temperatura, float humidade) {
+bool enviarSensorData(float temperatura, float umidade) {
   if (!conectarWiFi()) {
     Serial.println("[SENSOR] Envio cancelado: WiFi indisponivel.");
     return false;
   }
 
   StaticJsonDocument<192> doc;
-  doc["co2"] = co2;
   doc["temperatura"] = temperatura;
-  doc["humidade"] = humidade;
+  doc["umidade"] = umidade;
 
   String json;
   serializeJson(doc, json);
@@ -59,14 +58,14 @@ bool enviarSensorData(float co2, float temperatura, float humidade) {
   Serial.println();
   Serial.println("===== ENVIO SENSOR DATA =====");
   Serial.print("Endpoint: ");
-  Serial.println(sensorDataUrl);
+  Serial.println(loraEventUrl);
   Serial.print("JSON enviado: ");
   Serial.println(json);
 
   HTTPClient http;
   http.setTimeout(HTTP_TIMEOUT_MS);
 
-  if (!http.begin(sensorDataUrl)) {
+  if (!http.begin(loraEventUrl)) {
     Serial.println("[HTTP] Falha no http.begin().");
     return false;
   }
@@ -96,7 +95,7 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
 
-  Serial.println("===== TESTE POST /sensor_data =====");
+  Serial.println("===== TESTE POST /lora_event =====");
   conectarWiFi();
 }
 
@@ -105,7 +104,6 @@ void loop() {
     envioRealizado = true;
 
     bool ok = enviarSensorData(
-      1800.0,
       45.2,
       72.5
     );

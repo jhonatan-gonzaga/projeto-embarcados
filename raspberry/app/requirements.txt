@@ -4,3 +4,5 @@ pandas
 openvino
 depthai
 flask
+requests
+requests

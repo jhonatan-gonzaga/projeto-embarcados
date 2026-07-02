@@ -1,0 +1,42 @@
+Imagem anterior removida: /home/jhonatan/Área de trabalho/projet-embarcaods/raspberry/app/../results/images/last_child_alert.jpg
+Warm-up do modelo concluido. Iniciando cronometro de observacao.
+Nomes de classes do modelo: {0: 'adultface', 1: 'child'}
+Parametros de observacao | yolo_conf=0.25 | MIN_CHILD_CONF=0.60 | MIN_ADULT_CONF=0.60 | CHILD_MIN_PRESENCE=0.20 | ADULT_MAX_PRESENCE=0.05
+Modo de observacao iniciado. Pressione 'q' para encerrar antes do tempo.
+[DIAG] Amostra 1 | Quantidade de boxes: 1
+[DIAG] Deteccoes no frame: child 0.697
+Deteccao: class_id=1 class_name=child normalized=child confidence=0.6973
+[DIAG] Resultado apos filtros | child_detected=True child_conf_max=0.6973 | adult_detected=False adult_conf_max=0.0000
+Novo melhor frame encontrado.
+Confianca anterior: 0.0000
+Nova confianca: 0.6973
+Amostra 1 | boxes=1 | detections=[child 0.697] | raw_child_conf=0.697 | child=True conf=0.697 | adult=False conf=0.000 | child_presence=100.00% | adult_presence=0.00% | status=CRIANCA_SOZINHA_PARCIAL
+[DIAG] Amostra 2 | Quantidade de boxes: 1
+[DIAG] Deteccoes no frame: child 0.684
+Deteccao: class_id=1 class_name=child normalized=child confidence=0.6836
+[DIAG] Resultado apos filtros | child_detected=True child_conf_max=0.6836 | adult_detected=False adult_conf_max=0.0000
+Amostra 2 | boxes=1 | detections=[child 0.684] | raw_child_conf=0.684 | child=True conf=0.684 | adult=False conf=0.000 | child_presence=100.00% | adult_presence=0.00% | status=CRIANCA_SOZINHA_PARCIAL
+[DIAG] Amostra 3 | Quantidade de boxes: 1
+[DIAG] Deteccoes no frame: child 0.699
+Deteccao: class_id=1 class_name=child normalized=child confidence=0.6990
+[DIAG] Resultado apos filtros | child_detected=True child_conf_max=0.6990 | adult_detected=False adult_conf_max=0.0000
+Novo melhor frame encontrado.
+Confianca anterior: 0.6973
+Nova confianca: 0.6990
+Amostra 3 | boxes=1 | detections=[child 0.699] | raw_child_conf=0.699 | child=True conf=0.699 | adult=False conf=0.000 | child_presence=100.00% | adult_presence=0.00% | status=CRIANCA_SOZINHA_PARCIAL
+[DIAG] Amostra 4 | Quantidade de boxes: 0
+[DIAG] result.boxes vazio nesta amostra.
+[DIAG] Resultado apos filtros | child_detected=False child_conf_max=0.0000 | adult_detected=False adult_conf_max=0.0000
+Amostra 4 | boxes=0 | detections=[NO_BOXES] | raw_child_conf=0.000 | child=False conf=0.000 | adult=False conf=0.000 | child_presence=75.00% | adult_presence=0.00% | status=CRIANCA_SOZINHA_PARCIAL
+[DIAG] Amostra 5 | Quantidade de boxes: 0
+[DIAG] result.boxes vazio nesta amostra.
+[DIAG] Resultado apos filtros | child_detected=False child_conf_max=0.0000 | adult_detected=False adult_conf_max=0.0000
+Amostra 5 | boxes=0 | detections=[NO_BOXES] | raw_child_conf=0.000 | child=False conf=0.000 | adult=False conf=0.000 | child_presence=60.00% | adult_presence=0.00% | status=CRIANCA_SOZINHA_PARCIAL
+[DIAG] Amostra 6 | Quantidade de boxes: 0
+[DIAG] result.boxes vazio nesta amostra.
+[DIAG] Resultado apos filtros | child_detected=False child_conf_max=0.0000 | adult_detected=False adult_conf_max=0.0000
+Amostra 6 | boxes=0 | detections=[NO_BOXES] | raw_child_conf=0.000 | child=False conf=0.000 | adult=False conf=0.000 | child_presence=50.00% | adult_presence=0.00% | status=CRIANCA_SOZINHA_PARCIAL
+Melhor frame salvo:
+/home/jhonatan/Área de trabalho/projet-embarcaods/raspberry/app/../results/images/last_child_alert.jpg
+Confianca:
+0.6990

@@ -1,7 +1,7 @@
 """
 Exemplo de uso:
 
-python oakd_observation_test.py --model models/best_yolov8n_openvino_model --duration 180 --sample-interval 1.0
+python oakd_observation_test.py --model ../models/yolo11_openvino_model --duration 180 --sample-interval 1.0
 
 Modo de observacao:
 - Mantem a OAK-D ligada por ate 3 minutos.
@@ -356,8 +356,7 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
     best_child_timestamp = 0.0
 
     if save_best_frame and LAST_ALERT_IMAGE_PATH.exists():
-        LAST_ALERT_IMAGE_PATH.unlink()
-        log_diagnostico(debug_log_file, f"Imagem anterior removida: {LAST_ALERT_IMAGE_PATH}")
+        log_diagnostico(debug_log_file, f"Imagem anterior preservada ate uma nova ser salva: {LAST_ALERT_IMAGE_PATH}")
 
     warmup_packet = queue.get()
     warmup_frame = warmup_packet.getCvFrame()
@@ -491,6 +490,11 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
     elif save_best_frame:
         log_diagnostico(debug_log_file, "Nenhuma deteccao child encontrada; melhor frame nao foi salvo.")
 
+    if save_best_frame and not alert_image_path and LAST_ALERT_IMAGE_PATH.exists():
+        alert_image_path = str(LAST_ALERT_IMAGE_PATH)
+        log_diagnostico(debug_log_file, "Usando imagem anterior preservada:")
+        log_diagnostico(debug_log_file, alert_image_path)
+
     salvar_resumo(metrics, final_decision, best_child_conf, alert_image_path, best_child_timestamp)
 
     print("\nResumo final")
@@ -514,8 +518,8 @@ def executar_observacao(model, queue, duration, sample_interval, show_window=Tru
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Modo de observacao OAK-D + YOLOv8n OpenVINO.")
-    parser.add_argument("--model", default="../models/best_yolov8n_openvino_model", help="Pasta do modelo OpenVINO.")
+    parser = argparse.ArgumentParser(description="Modo de observacao OAK-D + YOLO11 OpenVINO.")
+    parser.add_argument("--model", default="../models/yolo11_openvino_model", help="Pasta do modelo OpenVINO.")
     parser.add_argument("--duration", type=float, default=OBSERVATION_SECONDS, help="Duracao da observacao em segundos.")
     parser.add_argument("--sample-interval", type=float, default=SAMPLE_INTERVAL, help="Intervalo entre amostras em segundos.")
     parser.add_argument("--no-display", action="store_true", help="Executa sem abrir janela OpenCV, ideal para Flask/headless.")

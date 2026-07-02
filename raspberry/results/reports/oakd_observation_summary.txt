@@ -1,0 +1,11 @@
+total_samples: 6
+child_samples: 3
+adult_samples: 0
+child_presence_ratio: 0.5000
+adult_presence_ratio: 0.0000
+child_avg_conf: 0.6933
+adult_avg_conf: 0.0000
+final_decision: ALERT_CHILD_ALONE
+best_child_conf: 0.6990
+alert_image_path: /home/jhonatan/Área de trabalho/projet-embarcaods/raspberry/app/../results/images/last_child_alert.jpg
+best_child_timestamp: 1782003223.111882

@@ -1,0 +1,7 @@
+timestamp,sample_index,child_detected,child_conf_max,adult_detected,adult_conf_max,boxes_count,detections,raw_child_conf,child_presence_ratio,adult_presence_ratio,partial_status
+1782003220.8664446,1,True,0.6973,False,0.0,1,child 0.697,0.6973,1.0,0.0,CRIANCA_SOZINHA_PARCIAL
+1782003221.9734285,2,True,0.6836,False,0.0,1,child 0.684,0.6836,1.0,0.0,CRIANCA_SOZINHA_PARCIAL
+1782003223.111994,3,True,0.699,False,0.0,1,child 0.699,0.699,1.0,0.0,CRIANCA_SOZINHA_PARCIAL
+1782003224.2554648,4,False,0.0,False,0.0,0,NO_BOXES,0.0,0.75,0.0,CRIANCA_SOZINHA_PARCIAL
+1782003225.343275,5,False,0.0,False,0.0,0,NO_BOXES,0.0,0.6,0.0,CRIANCA_SOZINHA_PARCIAL
+1782003226.4448647,6,False,0.0,False,0.0,0,NO_BOXES,0.0,0.5,0.0,CRIANCA_SOZINHA_PARCIAL

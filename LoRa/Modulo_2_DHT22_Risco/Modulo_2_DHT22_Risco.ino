@@ -18,7 +18,7 @@
 // --- Rede Wi-Fi e Servidor ---
 const char* WIFI_SSID           = "MIRANDAS 2.4G";
 const char* WIFI_PASSWORD       = "Mirandas1281@";
-const char* ENDPOINT_SERVIDOR   = "http://192.168.1.67:5000/sensor_data"; // URL corrigida!
+const char* ENDPOINT_SERVIDOR   = "http://192.168.1.67:5000/lora_event";
 
 // --- Tempos e Timeouts ---
 const unsigned long TIMEOUT_WIFI_MS   = 30000;  // Aumentado para 30s
@@ -261,7 +261,7 @@ bool enviarDadosParaServidor(float temperatura, float umidade, bool riscoTermico
 
     StaticJsonDocument<200> docJson;
     docJson["temperatura"] = temperatura;
-    docJson["humidade"] = umidade;
+    docJson["umidade"] = umidade;
     docJson["risco_termico"] = riscoTermico;
     docJson["sensor_risco"] = "DHT22";
 
