@@ -1,4 +1,4 @@
-"""Armazenamento em memoria dos dados DHT22 enviados pela LoRa/Heltec."""
+"""Armazenamento em memoria dos dados de sensores enviados pela LoRa/Heltec."""
 
 import threading
 import time
@@ -6,6 +6,19 @@ import time
 
 _sensor_lock = threading.Lock()
 _latest_sensor_data = None
+CO_FIELD_NAMES = (
+    "co",
+    "CO",
+    "co_ppm",
+    "coPpm",
+    "COppm",
+    "monoxido_carbono",
+    "monoxidoCarbono",
+    "carbon_monoxide",
+    "carbonMonoxide",
+    "mq7",
+    "mq7_co",
+)
 
 
 def converter_sensor_float(data, key):
@@ -33,15 +46,16 @@ def converter_sensor_float_opcional(data, *keys):
 
 
 def salvar_sensor_data(data):
-    """Valida e salva o ultimo pacote DHT22 em memoria.
+    """Valida e salva o ultimo pacote de sensores em memoria.
 
-    Aceita `temperatura` e `umidade` ou `humidade`.
+    Aceita `temperatura`, `umidade` ou `humidade`, e CO opcional.
     """
     global _latest_sensor_data
 
     humidade = converter_sensor_float_opcional(data, "humidade", "umidade", "humidity")
     if humidade is None:
         raise ValueError("Campo obrigatorio ausente: humidade/umidade")
+    co = converter_sensor_float_opcional(data, *CO_FIELD_NAMES)
 
     sensor_data = {
         "temperatura": converter_sensor_float(data, "temperatura"),
@@ -49,6 +63,9 @@ def salvar_sensor_data(data):
         "umidade": humidade,
         "timestamp": time.time(),
     }
+    if co is not None:
+        sensor_data["co"] = co
+        sensor_data["co_ppm"] = co
 
     with _sensor_lock:
         _latest_sensor_data = sensor_data

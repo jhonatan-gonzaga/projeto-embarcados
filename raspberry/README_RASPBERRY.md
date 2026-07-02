@@ -45,20 +45,20 @@ Opcoes principais:
 8 - Rodar observacao rapida manual
 9 - Ver status do servidor/ultimo resultado
 10 - Testar notificacao Telegram
-11 - Fluxo real: LoRa envia DHT22 -> verificar -> Telegram
+11 - Fluxo real: LoRa envia sensores -> verificar -> Telegram
 12 - Configurar Telegram
-13 - Simular evento LoRa DHT22 -> Raspberry
+13 - Simular evento LoRa sensores -> Raspberry
 14 - Descobrir chat_id do Telegram
 ```
 
 No fluxo normal, use a opcao `5`. Ela liga o servidor Flask e aguarda a
-Heltec/LoRa enviar `POST /lora_event` com os dados DHT22.
+Heltec/LoRa enviar `POST /lora_event` com os dados de sensores.
 
 Para o fluxo real completo, use a opcao `11`. Ela garante a configuracao do
 Telegram, liga o servidor e aguarda a Heltec/LoRa enviar `POST /lora_event`
-com `temperatura` e `umidade`. Quando o sinal chegar, a Raspberry verifica a
+com `temperatura`, `umidade` e `co`. Quando o sinal chegar, a Raspberry verifica a
 OAK-D/YOLO e, se confirmar `ALERT_CHILD_ALONE`, envia Telegram com a imagem e
-os dados DHT22 recebidos da LoRa.
+os dados de sensores recebidos da LoRa.
 
 A configuracao do Telegram fica salva em `raspberry/.runtime/telegram_env`.
 Se o Telegram retornar `Bad Request: chat not found`, abra o bot no Telegram,
@@ -156,19 +156,19 @@ curl "http://localhost:5000/check_car?duration=10&sample_interval=1.0"
 
 O endpoint executa `oakd_observation_test.py` e retorna o resumo final em JSON.
 
-## Testar Fluxo LoRa DHT22
+## Testar Fluxo LoRa Sensores
 
-Com o servidor ligado, simule a Heltec enviando temperatura e umidade:
+Com o servidor ligado, simule a Heltec enviando temperatura, umidade e CO:
 
 ```bash
 curl -X POST "http://localhost:5000/lora_event?duration=10&sample_interval=1.0" \
   -H "Content-Type: application/json" \
-  -d '{"temperatura":32.5,"umidade":60.0}'
+  -d '{"temperatura":32.5,"umidade":60.0,"co":18.0}'
 ```
 
-Esse endpoint salva os dados DHT22, inicia a observacao OAK-D/YOLO e, se o
+Esse endpoint salva os dados de sensores, inicia a observacao OAK-D/YOLO e, se o
 resultado final for `ALERT_CHILD_ALONE`, tenta enviar o Telegram com imagem,
-temperatura e umidade.
+temperatura, umidade e CO.
 
 ## Executar Observacao
 

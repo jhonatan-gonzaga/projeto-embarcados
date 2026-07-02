@@ -15,8 +15,8 @@ def get_last_telegram_error():
     return _last_telegram_error
 
 
-def mensagemTelegram(imagem, temperatura, humidade):
-    """Envia alerta com imagem e dados DHT22 quando as credenciais existem."""
+def mensagemTelegram(imagem, temperatura, humidade, co=None):
+    """Envia alerta com imagem e dados de sensores quando as credenciais existem."""
     global _last_telegram_error
 
     _last_telegram_error = None
@@ -29,10 +29,11 @@ def mensagemTelegram(imagem, temperatura, humidade):
         return False
 
     logger.info(
-        "Tentando enviar Telegram com imagem=%s temperatura=%s humidade=%s",
+        "Tentando enviar Telegram com imagem=%s temperatura=%s humidade=%s co=%s",
         imagem,
         temperatura,
         humidade,
+        co,
     )
     sent, error = send_telegram_alert_result(
         image_path=imagem,
@@ -40,6 +41,7 @@ def mensagemTelegram(imagem, temperatura, humidade):
         humidity=humidade,
         bot_token=bot_token,
         chat_id=chat_id,
+        co=co,
     )
     _last_telegram_error = error
     logger.info("Telegram enviado: %s", sent)

@@ -262,7 +262,7 @@ check_lora() {
 normal_lora_flow() {
   echo "Fluxo normal: LoRa/Heltec -> Raspberry -> OAK-D/YOLO -> Telegram."
   echo "A Raspberry ficara com o servidor ligado aguardando POST /lora_event"
-  echo "com JSON: {\"temperatura\": 32.5, \"umidade\": 60.0}"
+  echo "com JSON: {\"temperatura\": 32.5, \"umidade\": 60.0, \"co\": 18.0}"
   echo
   load_telegram_env
   if ! telegram_configured; then
@@ -280,16 +280,16 @@ normal_lora_flow() {
 
 wait_lora_alert_flow() {
   echo "Fluxo de alerta real:"
-  echo "1. LoRa/Heltec envia o sinal de alerta com temperatura e umidade via POST /lora_event."
+  echo "1. LoRa/Heltec envia o sinal de alerta com temperatura, umidade e CO via POST /lora_event."
   echo "2. Raspberry verifica crianca sozinha com OAK-D/YOLO."
-  echo "3. Se confirmar ALERT_CHILD_ALONE, envia Telegram com imagem e os dados DHT22 recebidos da LoRa."
+  echo "3. Se confirmar ALERT_CHILD_ALONE, envia Telegram com imagem e os dados de sensores recebidos da LoRa."
   echo
   use_default_telegram_config
   run_server
 }
 
 send_lora_event_test() {
-  local temperature humidity url
+  local temperature humidity co url
   if ! ensure_telegram_config; then
     return
   fi
@@ -302,16 +302,18 @@ send_lora_event_test() {
     return
   fi
 
-  read -r -p "Temperatura DHT22 [32.5]: " temperature
-  read -r -p "Umidade DHT22 [60.0]: " humidity
+  read -r -p "Temperatura [32.5]: " temperature
+  read -r -p "Umidade [60.0]: " humidity
+  read -r -p "CO em ppm [18.0]: " co
   temperature="${temperature:-32.5}"
   humidity="${humidity:-60.0}"
+  co="${co:-18.0}"
   url="$SERVER_URL/lora_event?duration=10&sample_interval=1.0&yolo_conf=0.25&debug_detections=true"
 
   echo "Enviando evento LoRa simulado para $url"
   curl -fsS \
     -H "Content-Type: application/json" \
-    -d "{\"temperatura\":$temperature,\"umidade\":$humidity}" \
+    -d "{\"temperatura\":$temperature,\"umidade\":$humidity,\"co\":$co}" \
     "$url"
   echo
 }
@@ -554,9 +556,9 @@ show_menu() {
   echo "8 - Rodar observacao rapida manual"
   echo "9 - Ver status do servidor/ultimo resultado"
   echo "10 - Testar notificacao Telegram"
-  echo "11 - Fluxo real: LoRa envia DHT22 -> verificar -> Telegram"
+  echo "11 - Fluxo real: LoRa envia sensores -> verificar -> Telegram"
   echo "12 - Configurar Telegram"
-  echo "13 - Simular evento LoRa DHT22 -> Raspberry"
+  echo "13 - Simular evento LoRa sensores -> Raspberry"
   echo "14 - Descobrir chat_id do Telegram"
   echo
 }

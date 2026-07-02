@@ -4,9 +4,9 @@ Aplicacao principal Flask do sistema Raspberry Pi 5 + OAK-D.
 Responsabilidades:
 - receber acionamento de observacao;
 - executar observacao OAK-D/YOLO em background;
-- receber dados DHT22 enviados pela LoRa/Heltec;
+- receber dados de sensores enviados pela LoRa/Heltec;
 - expor ultimo resultado e ultima imagem;
-- chamar mensagemTelegram(imagem, temperatura, humidade) quando houver alerta.
+- chamar mensagemTelegram(imagem, temperatura, humidade, co) quando houver alerta.
 """
 
 import logging
@@ -22,7 +22,7 @@ from modules.observation import (
     montar_comando_observacao,
     set_running_if_idle,
 )
-from modules.sensors import obter_latest_sensor_data, salvar_sensor_data
+from modules.sensors import CO_FIELD_NAMES, obter_latest_sensor_data, salvar_sensor_data
 from modules.storage import (
     DEFAULT_DURATION,
     DEFAULT_MODEL,
@@ -59,11 +59,13 @@ def processar_alerta_pos_observacao(result, summary):
     image_path = obter_caminho_imagem_alerta(summary)
     temperatura = sensor_data.get("temperatura")
     humidade = sensor_data.get("humidade")
+    co = sensor_data.get("co")
 
     result["telegram_image_path"] = str(image_path)
     result["telegram_image_exists"] = image_path.exists() and image_path.stat().st_size > 0
     result["telegram_temperature"] = temperatura
     result["telegram_humidity"] = humidade
+    result["telegram_co"] = co
     result["telegram_attempted"] = True
 
     if not result["telegram_image_exists"]:
@@ -73,16 +75,18 @@ def processar_alerta_pos_observacao(result, summary):
         return result
 
     logger.info(
-        "Enviando Telegram: image=%s temperatura=%s humidade=%s",
+        "Enviando Telegram: image=%s temperatura=%s humidade=%s co=%s",
         image_path,
         temperatura,
         humidade,
+        co,
     )
 
     telegram_sent = mensagemTelegram(
         str(image_path),
         temperatura,
         humidade,
+        co,
     )
     result["telegram_sent"] = bool(telegram_sent)
     result["telegram_error"] = get_last_telegram_error()
@@ -99,7 +103,7 @@ def health():
 
 @app.post("/sensor_data")
 def receber_sensor_data():
-    """Recebe dados DHT22 enviados pela Heltec/ESP32."""
+    """Recebe dados de sensores enviados pela Heltec/ESP32."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         logger.warning("POST /sensor_data com JSON ausente ou invalido.")
@@ -112,9 +116,10 @@ def receber_sensor_data():
         return jsonify({"status": "INVALID_DATA", "error": str(error)}), 400
 
     logger.info(
-        "POST /sensor_data -> temperatura=%.2f humidade=%.2f",
+        "POST /sensor_data -> temperatura=%.2f humidade=%.2f co=%s",
         sensor_data["temperatura"],
         sensor_data["humidade"],
+        sensor_data.get("co"),
     )
     return jsonify({"status": "OK"})
 
@@ -172,7 +177,7 @@ def get_image_info():
 
 @app.post("/test_telegram")
 def test_telegram():
-    """Testa o envio Telegram usando a imagem atual e dados DHT22."""
+    """Testa o envio Telegram usando a imagem atual e dados de sensores."""
     data = request.get_json(silent=True)
     if data is not None and not isinstance(data, dict):
         logger.warning("POST /test_telegram com JSON invalido.")
@@ -181,6 +186,11 @@ def test_telegram():
     sensor_data = obter_latest_sensor_data() or {}
     temperatura = (data or {}).get("temperatura", sensor_data.get("temperatura"))
     humidade = (data or {}).get("humidade", (data or {}).get("umidade", sensor_data.get("humidade")))
+    co = sensor_data.get("co")
+    for co_field_name in CO_FIELD_NAMES:
+        if data and co_field_name in data:
+            co = data[co_field_name]
+            break
     image_path = obter_caminho_imagem_alerta()
     image_exists = image_path.exists() and image_path.stat().st_size > 0
 
@@ -196,10 +206,11 @@ def test_telegram():
                 "telegram_image_exists": False,
                 "telegram_temperature": temperatura,
                 "telegram_humidity": humidade,
+                "telegram_co": co,
             }
         ), 404
 
-    sent = mensagemTelegram(str(image_path), temperatura, humidade)
+    sent = mensagemTelegram(str(image_path), temperatura, humidade, co)
     error = get_last_telegram_error()
     logger.info("POST /test_telegram -> sent=%s error=%s", sent, error)
     return jsonify(
@@ -211,6 +222,7 @@ def test_telegram():
             "telegram_image_exists": True,
             "telegram_temperature": temperatura,
             "telegram_humidity": humidade,
+            "telegram_co": co,
         }
     )
 
@@ -269,7 +281,7 @@ def iniciar_observacao_por_request():
 
 @app.post("/lora_event")
 def receber_lora_event():
-    """Fluxo normal: LoRa envia DHT22 e a Raspberry inicia a observacao."""
+    """Fluxo normal: LoRa envia sensores e a Raspberry inicia a observacao."""
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         logger.warning("POST /lora_event com JSON ausente ou invalido.")
@@ -282,9 +294,10 @@ def receber_lora_event():
         return jsonify({"status": "INVALID_DATA", "error": str(error)}), 400
 
     logger.info(
-        "POST /lora_event -> temperatura=%.2f humidade=%.2f; iniciando observacao",
+        "POST /lora_event -> temperatura=%.2f humidade=%.2f co=%s; iniciando observacao",
         sensor_data["temperatura"],
         sensor_data["humidade"],
+        sensor_data.get("co"),
     )
     return iniciar_observacao_por_request()
 

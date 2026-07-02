@@ -48,6 +48,7 @@ class TelegramNotifier:
         image_path: str | Path,
         temperature: float | int | str | None,
         humidity: float | int | str | None,
+        co: float | int | str | None = None,
     ) -> bool:
         """Envia foto com legenda Markdown e retorna True somente no sucesso."""
         if not self.bot_token or not self.chat_id:
@@ -60,7 +61,7 @@ class TelegramNotifier:
         url = TELEGRAM_SEND_PHOTO_URL.format(bot_token=self.bot_token)
         payload: dict[str, Any] = {
             "chat_id": self.chat_id,
-            "caption": self._build_caption(temperature, humidity),
+            "caption": self._build_caption(temperature, humidity, co),
             "parse_mode": "Markdown",
         }
 
@@ -110,15 +111,18 @@ class TelegramNotifier:
     def _build_caption(
         temperature: float | int | str | None,
         humidity: float | int | str | None,
+        co: float | int | str | None = None,
     ) -> str:
         """Monta a legenda Markdown enviada junto da foto."""
         temperature_text = _format_sensor_value(temperature, suffix="C")
         humidity_text = _format_sensor_value(humidity, suffix="%")
+        co_text = _format_sensor_value(co, suffix="ppm")
 
         return (
             "*ALERTA CRITICO: crianca detectada sozinha no veiculo!*\n\n"
             f"*Temperatura:* {temperature_text}\n"
-            f"*Umidade:* {humidity_text}\n\n"
+            f"*Umidade:* {humidity_text}\n"
+            f"*CO:* {co_text}\n\n"
             "Verifique o veiculo imediatamente."
         )
 
@@ -130,6 +134,7 @@ def send_telegram_alert(
     bot_token: str,
     chat_id: str | int,
     timeout: int | float = DEFAULT_TIMEOUT_SECONDS,
+    co: float | int | str | None = None,
 ) -> bool:
     """Envia alerta Telegram com foto e retorna True em caso de sucesso.
 
@@ -142,6 +147,7 @@ def send_telegram_alert(
         image_path=image_path,
         temperature=temperature,
         humidity=humidity,
+        co=co,
     )
 
 
@@ -152,6 +158,7 @@ def send_telegram_alert_result(
     bot_token: str,
     chat_id: str | int,
     timeout: int | float = DEFAULT_TIMEOUT_SECONDS,
+    co: float | int | str | None = None,
 ) -> tuple[bool, str | None]:
     """Envia alerta e retorna (sucesso, motivo_da_falha)."""
     notifier = TelegramNotifier(bot_token=bot_token, chat_id=chat_id, timeout=timeout)
@@ -159,6 +166,7 @@ def send_telegram_alert_result(
         image_path=image_path,
         temperature=temperature,
         humidity=humidity,
+        co=co,
     )
     return sent, notifier.last_error
 
@@ -214,6 +222,7 @@ if __name__ == "__main__":
         image_path=imagem_teste,
         temperature=38.5,
         humidity=72.5,
+        co=18.0,
         bot_token=meu_token,
         chat_id=meu_chat_id,
     )
