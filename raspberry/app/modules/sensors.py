@@ -18,6 +18,12 @@ CO_FIELD_NAMES = (
     "carbonMonoxide",
     "mq7",
     "mq7_co",
+    "mq9",
+    "mq9_ppm",
+    "mq9ppm",
+    "mq9_co",
+    "mq9Co",
+    "mq9_co_ppm",
 )
 
 
